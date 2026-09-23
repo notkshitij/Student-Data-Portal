@@ -15,6 +15,7 @@ from app.models.student_response import StudentResponse
 from app.models.campaign_submission import CampaignSubmission
 from app.models.import_record import Import, ImportStatus
 from app.models.audit_log import AuditLog
+from app.models.user_session import UserSession
 
 __all__ = [
     "SystemMetadata",
@@ -31,4 +32,5 @@ __all__ = [
     "Import",
     "ImportStatus",
     "AuditLog",
+    "UserSession",
 ]

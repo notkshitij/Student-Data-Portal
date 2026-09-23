@@ -16,7 +16,7 @@ from app.config import settings
 from app.database.session import Base
 
 # Import all models so that Base.metadata is populated for autogenerate.
-from app.models import system_metadata as _  # noqa: F401
+import app.models  # noqa: F401
 
 # Alembic Config object — provides access to values in alembic.ini.
 config = context.config

@@ -94,7 +94,7 @@ def db(engine, tables_exist):
 
 def _make_admin(db: Session, email: str = "admin@test.com") -> User:
     """Create and flush an ADMIN user."""
-    user = User(email=email, role=UserRole.ADMIN, password_hash="hash_placeholder")
+    user = User(email=email, role=UserRole.ADMIN, google_subject_id=f"sub_{email}")
     db.add(user)
     db.flush()
     return user

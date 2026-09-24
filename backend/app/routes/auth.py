@@ -10,44 +10,55 @@ from sqlalchemy.orm import Session
 from app.database.session import get_db
 from app.models.user import User
 from app.models.user_session import UserSession
-from app.schemas.auth import GenericResponse, LoginRequest
+from app.schemas.auth import GenericResponse, GoogleLoginRequest, UserMeResponse
+from app.models.user import UserRole
 from app.services import auth
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-
 @router.post("/login", response_model=GenericResponse)
 def login(
-    login_data: LoginRequest,
+    login_data: GoogleLoginRequest,
     request: Request,
     response: Response,
     db: Session = Depends(get_db),
 ):
-    """Authenticate a user and set a session cookie."""
-    # Generic error message to prevent email enumeration
-    login_error = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Incorrect email or password",
-    )
+    """Authenticate a user using Google OAuth authorization code."""
+    try:
+        id_info = auth.verify_google_oauth2_code(login_data.code)
+    except ValueError:
+        # Avoid detailed error messages to prevent enumeration/attacks
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Your Google account could not be used to access this portal."
+        )
+        
+    email = id_info.get("email", "").lower()
+    subject_id = id_info.get("sub")
     
-    user = db.query(User).filter(User.email == login_data.email).first()
+    # Check if user exists by email or subject_id
+    user = db.query(User).filter(
+        (User.email == email) | (User.google_subject_id == subject_id)
+    ).first()
+    
     if not user:
-        raise login_error
-        
-    if not user.password_hash:
-        raise login_error
-        
-    if not auth.verify_password(user.password_hash, login_data.password):
-        raise login_error
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Your Google account could not be used to access this portal."
+        )
         
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Account is inactive",
+            detail="Your Google account could not be used to access this portal."
         )
         
+    # Update Google subject ID if it was empty (e.g. initial setup)
+    if not user.google_subject_id:
+        user.google_subject_id = subject_id
+        
     # Create session
-    session = auth.create_user_session(db, user.id)
+    session = auth.create_user_session(db, str(user.id))
     
     # Update last login
     user.last_login_at = datetime.now(timezone.utc)
@@ -64,6 +75,14 @@ def login(
     )
     
     return GenericResponse(message="Successfully logged in")
+
+
+@router.get("/me", response_model=UserMeResponse)
+def get_current_user_info(
+    current_user: User = Depends(auth.get_current_user),
+):
+    """Return the currently authenticated user based on the session cookie."""
+    return current_user
 
 
 @router.post("/logout", response_model=GenericResponse)

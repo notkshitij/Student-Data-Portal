@@ -9,34 +9,69 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
-from argon2 import PasswordHasher
-from argon2.exceptions import VerifyMismatchError
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
+import requests
 from fastapi import Cookie, Depends, HTTPException, Request, status
 from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.database.session import get_db
 from app.models.user import User, UserRole
 from app.models.user_session import UserSession
-
-ph = PasswordHasher()
 
 SESSION_COOKIE_NAME = "session_token"
 # 7 days in seconds
 SESSION_EXPIRATION_SECONDS = 7 * 24 * 60 * 60
 
+def verify_google_oauth2_code(code: str) -> dict:
+    """Exchanges an auth code for tokens and verifies the ID token."""
+    token_url = "https://oauth2.googleapis.com/token"
+    data = {
+        "code": code,
+        "client_id": settings.google_client_id,
+        "client_secret": settings.google_client_secret,
+        "redirect_uri": settings.google_redirect_uri,
+        "grant_type": "authorization_code"
+    }
+    resp = requests.post(token_url, data=data)
+    if not resp.ok:
+        raise ValueError("Failed to exchange code with Google")
+    
+    tokens = resp.json()
+    id_token_jwt = tokens.get("id_token")
+    if not id_token_jwt:
+        raise ValueError("No ID token returned from Google")
 
-def hash_password(password: str) -> str:
-    """Hash a password using Argon2id."""
-    return ph.hash(password)
-
-
-def verify_password(hash: str, password: str) -> bool:
-    """Verify a password against an Argon2id hash."""
+    request = google_requests.Request()
     try:
-        return ph.verify(hash, password)
-    except VerifyMismatchError:
-        return False
+        id_info = id_token.verify_oauth2_token(
+            id_token_jwt, request, settings.google_client_id
+        )
+    except ValueError as e:
+        raise ValueError(f"Invalid ID token: {str(e)}")
+        
+    # Check email verified and domain
+    if not id_info.get("email_verified"):
+        raise ValueError("Google email is not verified")
+        
+    email = id_info.get("email", "").lower()
+    domain = id_info.get("hd")
+    allowed_domains = {"poornima.edu.in", "poornima.org"}
+    
+    # Allow explicitly configured admin email, regardless of domain
+    admin_email = settings.admin_email.lower()
+    
+    if email == admin_email:
+        return id_info
+    
+    # Sometimes 'hd' might be missing if it's a regular gmail account, 
+    # but we strictly require these domains for students.
+    if domain not in allowed_domains and not any(email.endswith(f"@{d}") for d in allowed_domains):
+        raise ValueError(f"Domain not allowed: {domain or email.split('@')[-1]}")
+        
+    return id_info
 
 
 def generate_session_token() -> str:

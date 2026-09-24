@@ -35,8 +35,8 @@ class User(Base):
     email: Mapped[str] = mapped_column(
         String(320), unique=True, nullable=False, index=True,
     )
-    password_hash: Mapped[str | None] = mapped_column(
-        String(512), nullable=True,
+    google_subject_id: Mapped[str | None] = mapped_column(
+        String(255), unique=True, index=True, nullable=True,
     )
     role: Mapped[UserRole] = mapped_column(
         String(20), nullable=False, index=True,

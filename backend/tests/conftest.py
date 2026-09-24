@@ -64,11 +64,48 @@ def client(db_session):
     # Remove the dummy router to avoid conflicts across test files if not needed, 
     # but include_router modifies the global app. It's fine for testing.
 
+@pytest.fixture
+def mock_google_auth(monkeypatch):
+    """Mocks the Google OAuth verification function."""
+    def _mock_verify(code: str):
+        if code == "valid_code_student":
+            return {
+                "sub": "student_google_sub_123",
+                "email": "student_auth@poornima.edu.in",
+                "email_verified": True,
+                "hd": "poornima.edu.in"
+            }
+        elif code == "valid_code_admin":
+            return {
+                "sub": "admin_google_sub_456",
+                "email": "admin_auth@poornima.org",
+                "email_verified": True,
+                "hd": "poornima.org"
+            }
+        elif code == "invalid_domain":
+            return {
+                "sub": "invalid_domain_123",
+                "email": "hacker@gmail.com",
+                "email_verified": True,
+                "hd": None
+            }
+        elif code == "unverified_email":
+            return {
+                "sub": "unverified_123",
+                "email": "unverified@poornima.edu.in",
+                "email_verified": False,
+                "hd": "poornima.edu.in"
+            }
+        else:
+            raise ValueError("Invalid code or Google error")
+            
+    monkeypatch.setattr(auth, "verify_google_oauth2_code", _mock_verify)
+
 @pytest.fixture()
 def student_user(db_session):
     user = User(
-        email="student_auth@test.com",
-        password_hash=auth.hash_password("studentpass"),
+        email="student_auth@poornima.edu.in",
+        google_subject_id="student_google_sub_123",
         role=UserRole.STUDENT,
     )
     db_session.add(user)
@@ -78,8 +115,8 @@ def student_user(db_session):
 @pytest.fixture()
 def admin_user(db_session):
     user = User(
-        email="admin_auth@test.com",
-        password_hash=auth.hash_password("adminpass"),
+        email="admin_auth@poornima.org",
+        google_subject_id="admin_google_sub_456",
         role=UserRole.ADMIN,
     )
     db_session.add(user)

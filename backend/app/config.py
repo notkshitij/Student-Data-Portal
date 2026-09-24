@@ -34,6 +34,10 @@ class Settings:
             "postgresql+psycopg://sdvp_user:sdvp_dev_password@localhost:5432/sdvp",
         )
     )
+    google_client_id: str = field(default_factory=lambda: os.getenv("GOOGLE_CLIENT_ID", ""))
+    google_client_secret: str = field(default_factory=lambda: os.getenv("GOOGLE_CLIENT_SECRET", ""))
+    google_redirect_uri: str = field(default_factory=lambda: os.getenv("GOOGLE_REDIRECT_URI", "postmessage"))
+    admin_email: str = field(default_factory=lambda: os.getenv("ADMIN_EMAIL", "piyushagarwalnew@gmail.com"))
 
 
 settings = Settings()

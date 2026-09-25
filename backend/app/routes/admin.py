@@ -21,6 +21,9 @@ from app.schemas.admin_campaign import (
     AdminCampaignListResponse,
     AdminCampaignDetailResponse,
     GenericAdminResponse,
+    AdminFormConfigResponse,
+    AdminFormConfigUpdateRequest,
+    AdminFormField
 )
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -196,3 +199,122 @@ def publish_campaign(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail="An error occurred while publishing the campaign")
+
+@router.get("/campaigns/{campaign_id}/form", response_model=AdminFormConfigResponse)
+def get_campaign_form_config(
+    campaign_id: uuid.UUID,
+    admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """Get the form validation configuration for all fields in a campaign."""
+    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+        
+    # We need to know which fields require student input.
+    # A field requires student input if any ImportedFieldValue for it has requires_student_input=True.
+    # Assuming all imported values for a collect field have requires_student_input=True.
+    collect_fields_subq = (
+        db.query(ImportedFieldValue.campaign_field_id)
+        .filter(ImportedFieldValue.requires_student_input == True)
+        .distinct()
+    ).subquery()
+    
+    # Actually, the user requirements state:
+    # `requires_student_input` comes from the Excel `[COLLECT]` marker.
+    # Let's get all fields and check if they are in collect_fields_subq
+    fields = db.query(CampaignField).filter(CampaignField.campaign_id == campaign_id).order_by(CampaignField.field_order).all()
+    
+    collect_field_ids = {
+        row[0] for row in db.query(collect_fields_subq.c.campaign_field_id).all()
+    }
+    
+    response_fields = []
+    for f in fields:
+        # Default config if null
+        vconfig = f.validation_config
+        if not vconfig and f.id in collect_field_ids:
+            vconfig = {"type": "text", "rules": {"required": False}}
+            
+        response_fields.append(
+            AdminFormField(
+                id=f.id,
+                field_name=f.field_name,
+                field_order=f.field_order,
+                requires_student_input=f.id in collect_field_ids,
+                validation_config=vconfig
+            )
+        )
+        
+    return AdminFormConfigResponse(
+        campaign_id=campaign_id,
+        fields=response_fields
+    )
+
+
+@router.put("/campaigns/{campaign_id}/form", response_model=GenericAdminResponse)
+def update_campaign_form_config(
+    campaign_id: uuid.UUID,
+    request: AdminFormConfigUpdateRequest,
+    admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """Update the form validation configuration for a campaign's collect fields."""
+    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+        
+    # Only allow edits in DRAFT state
+    if campaign.status != CampaignStatus.DRAFT:
+        raise HTTPException(
+            status_code=400,
+            detail="Form configuration can only be modified for DRAFT campaigns"
+        )
+        
+    # Fetch all fields for this campaign
+    fields = {f.id: f for f in db.query(CampaignField).filter(CampaignField.campaign_id == campaign_id).all()}
+    
+    # Identify collect fields
+    collect_fields_subq = (
+        db.query(ImportedFieldValue.campaign_field_id)
+        .filter(ImportedFieldValue.requires_student_input == True)
+        .distinct()
+    ).subquery()
+    
+    collect_field_ids = {
+        row[0] for row in db.query(collect_fields_subq.c.campaign_field_id).all()
+    }
+    
+    updates_made = 0
+    try:
+        with db.begin_nested():
+            for update_field in request.fields:
+                field_id = update_field.id
+                if field_id not in fields:
+                    raise HTTPException(status_code=400, detail=f"Field {field_id} does not belong to this campaign")
+                if field_id not in collect_field_ids:
+                    raise HTTPException(status_code=400, detail=f"Field {field_id} is not a collect field and cannot be configured")
+                    
+                field = fields[field_id]
+                # Pydantic has already validated and normalized update_field.validation_config
+                field.validation_config = update_field.validation_config.model_dump()
+                updates_made += 1
+                
+        # Create audit log
+        audit = AuditLog(
+            user_id=admin.id,
+            action="form_config_updated",
+            entity_type="campaign",
+            entity_id=str(campaign_id),
+            details={"fields_updated": updates_made}
+        )
+        db.add(audit)
+        
+        db.commit()
+        return GenericAdminResponse(message="Form configuration updated successfully")
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to update form configuration")

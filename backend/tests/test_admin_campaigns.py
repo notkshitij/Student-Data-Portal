@@ -183,3 +183,145 @@ def test_publish_nonexistent_campaign(client: TestClient, admin_user, mock_googl
     
     resp = client.post(f"/api/admin/campaigns/{uuid.uuid4()}/publish")
     assert resp.status_code == 404
+
+# --- Form Configuration Tests ---
+
+def test_get_form_config_unauthenticated(client):
+    response = client.get(f"/api/admin/campaigns/{uuid.uuid4()}/form")
+    assert response.status_code == 401
+
+
+def test_get_form_config_as_student(client, student_user, mock_google_auth):
+    _login_as_student(client, mock_google_auth)
+    response = client.get(f"/api/admin/campaigns/{uuid.uuid4()}/form")
+    assert response.status_code == 403
+
+
+def test_get_form_config_as_admin(client, admin_user, draft_campaign, db_session, mock_google_auth):
+    _login_as_admin(client, mock_google_auth)
+    response = client.get(f"/api/admin/campaigns/{draft_campaign.id}/form")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["campaign_id"] == str(draft_campaign.id)
+    assert len(data["fields"]) > 0
+    # Check default config for collect fields
+    for field in data["fields"]:
+        if field["requires_student_input"]:
+            assert field["validation_config"]["type"] == "text"
+
+
+def test_update_form_config_as_admin(client, admin_user, draft_campaign, db_session, mock_google_auth):
+    _login_as_admin(client, mock_google_auth)
+    
+    # 1. Fetch current config
+    get_resp = client.get(f"/api/admin/campaigns/{draft_campaign.id}/form")
+    fields = get_resp.json()["fields"]
+    collect_fields = [f for f in fields if f["requires_student_input"]]
+    non_collect_fields = [f for f in fields if not f["requires_student_input"]]
+    
+    assert len(collect_fields) > 0
+    target_field = collect_fields[0]
+    
+    # 2. Update config for a valid collect field with email type
+    update_payload = {
+        "fields": [
+            {
+                "id": target_field["id"],
+                "validation_config": {
+                    "type": "email",
+                    "rules": {
+                        "required": True,
+                        "allowed_domains": ["poornima.edu.in", "poornima.org"]
+                    }
+                }
+            }
+        ]
+    }
+    
+    put_resp = client.put(f"/api/admin/campaigns/{draft_campaign.id}/form", json=update_payload)
+    assert put_resp.status_code == 200
+    
+    # 3. Verify it was saved
+    verify_resp = client.get(f"/api/admin/campaigns/{draft_campaign.id}/form")
+    updated_field = next(f for f in verify_resp.json()["fields"] if f["id"] == target_field["id"])
+    assert updated_field["validation_config"]["type"] == "email"
+    assert updated_field["validation_config"]["rules"]["required"] is True
+    assert "poornima.edu.in" in updated_field["validation_config"]["rules"]["allowed_domains"]
+
+
+def test_update_form_config_non_collect_field_rejected(client, admin_user, draft_campaign, db_session, mock_google_auth):
+    _login_as_admin(client, mock_google_auth)
+    
+    get_resp = client.get(f"/api/admin/campaigns/{draft_campaign.id}/form")
+    fields = get_resp.json()["fields"]
+    non_collect_fields = [f for f in fields if not f["requires_student_input"]]
+    
+    if len(non_collect_fields) > 0:
+        target_field = non_collect_fields[0]
+        update_payload = {
+            "fields": [
+                {
+                    "id": target_field["id"],
+                    "validation_config": {
+                        "type": "text",
+                        "rules": {"required": True}
+                    }
+                }
+            ]
+        }
+        
+        put_resp = client.put(f"/api/admin/campaigns/{draft_campaign.id}/form", json=update_payload)
+        assert put_resp.status_code == 400
+        assert "not a collect field" in put_resp.json()["detail"]
+
+
+def test_update_form_config_invalid_rules_rejected(client, admin_user, draft_campaign, mock_google_auth):
+    _login_as_admin(client, mock_google_auth)
+    
+    get_resp = client.get(f"/api/admin/campaigns/{draft_campaign.id}/form")
+    collect_fields = [f for f in get_resp.json()["fields"] if f["requires_student_input"]]
+    
+    # Text length contradiction
+    update_payload = {
+        "fields": [{
+            "id": collect_fields[0]["id"],
+            "validation_config": {
+                "type": "text",
+                "rules": {"min_length": 10, "max_length": 5}
+            }
+        }]
+    }
+    
+    put_resp = client.put(f"/api/admin/campaigns/{draft_campaign.id}/form", json=update_payload)
+    assert put_resp.status_code == 422 # Pydantic validation error
+
+
+def test_update_form_config_stale_rules_removed(client, admin_user, draft_campaign, mock_google_auth):
+    _login_as_admin(client, mock_google_auth)
+    
+    get_resp = client.get(f"/api/admin/campaigns/{draft_campaign.id}/form")
+    target_field = [f for f in get_resp.json()["fields"] if f["requires_student_input"]][0]
+    
+    # We pass 'allowed_domains' to a 'number' type. The backend should silently strip it out.
+    update_payload = {
+        "fields": [{
+            "id": target_field["id"],
+            "validation_config": {
+                "type": "number",
+                "rules": {
+                    "min_value": 0,
+                    "allowed_domains": ["poornima.edu.in"]
+                }
+            }
+        }]
+    }
+    
+    put_resp = client.put(f"/api/admin/campaigns/{draft_campaign.id}/form", json=update_payload)
+    assert put_resp.status_code == 200
+    
+    verify_resp = client.get(f"/api/admin/campaigns/{draft_campaign.id}/form")
+    updated_field = next(f for f in verify_resp.json()["fields"] if f["id"] == target_field["id"])
+    assert updated_field["validation_config"]["type"] == "number"
+    assert "allowed_domains" not in updated_field["validation_config"]["rules"]
+    assert updated_field["validation_config"]["rules"]["min_value"] == 0.0
+

@@ -122,3 +122,47 @@ def admin_user(db_session):
     db_session.add(user)
     db_session.commit()
     return user
+
+@pytest.fixture()
+def draft_campaign(db_session, admin_user, student_user):
+    from app.models.campaign import Campaign, CampaignStatus
+    from app.models.campaign_field import CampaignField
+    from app.models.campaign_student import CampaignStudent
+    from app.models.imported_field_value import ImportedFieldValue
+    
+    # Create campaign
+    c = Campaign(name="Test Form Config", created_by_id=admin_user.id, status=CampaignStatus.DRAFT)
+    db_session.add(c)
+    db_session.commit()
+    
+    # Create student
+    cs = CampaignStudent(campaign_id=c.id, student_id=student_user.id)
+    db_session.add(cs)
+    
+    # Create non-collect field
+    f1 = CampaignField(campaign_id=c.id, field_name="Name", field_order=1)
+    db_session.add(f1)
+    
+    # Create collect field
+    f2 = CampaignField(campaign_id=c.id, field_name="Phone", field_order=2)
+    db_session.add(f2)
+    
+    db_session.commit()
+    
+    # Add imported values
+    v1 = ImportedFieldValue(
+        campaign_student_id=cs.id,
+        campaign_field_id=f1.id,
+        imported_value="John",
+        requires_student_input=False
+    )
+    v2 = ImportedFieldValue(
+        campaign_student_id=cs.id,
+        campaign_field_id=f2.id,
+        imported_value="[COLLECT]",
+        requires_student_input=True
+    )
+    db_session.add_all([v1, v2])
+    db_session.commit()
+    
+    return c

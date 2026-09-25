@@ -164,3 +164,224 @@ def test_student_get_campaign_detail_fields_and_collect_logic(client: TestClient
     # Check collect value WITH response
     assert fields[2]["requires_student_input"] is True
     assert fields[2]["value"] == "123 Main St"
+
+# --- Response Saving Tests ---
+
+def test_update_responses_unauthenticated(client):
+    response = client.put(f"/api/student/campaigns/{uuid.uuid4()}/responses", json={"responses": []})
+    assert response.status_code == 401
+
+
+def test_update_responses_as_admin_rejected(client, admin_user, mock_google_auth):
+    _login_as_admin(client, mock_google_auth)
+    response = client.put(f"/api/student/campaigns/{uuid.uuid4()}/responses", json={"responses": []})
+    assert response.status_code == 403
+
+
+def test_update_responses_not_enrolled(client, student_user, admin_user, db_session, mock_google_auth):
+    # Student is NOT enrolled in this campaign
+    c = Campaign(name="Other", created_by_id=admin_user.id, status=CampaignStatus.PUBLISHED)
+    db_session.add(c)
+    db_session.commit()
+    
+    _login_as_student(client, mock_google_auth)
+    resp = client.put(f"/api/student/campaigns/{c.id}/responses", json={"responses": []})
+    assert resp.status_code == 404
+
+
+def test_update_responses_valid(client, student_user, draft_campaign, db_session, mock_google_auth):
+    # Publish it first
+    draft_campaign.status = CampaignStatus.PUBLISHED
+    db_session.commit()
+    
+    _login_as_student(client, mock_google_auth)
+    
+    # 1. Fetch form
+    get_resp = client.get(f"/api/student/campaigns/{draft_campaign.id}")
+    fields = get_resp.json()["fields"]
+    collect_field = next(f for f in fields if f["requires_student_input"])
+    
+    # 2. Update response
+    payload = {
+        "responses": [
+            {
+                "field_id": collect_field["field_id"],
+                "value": "9876543210"
+            }
+        ]
+    }
+    put_resp = client.put(f"/api/student/campaigns/{draft_campaign.id}/responses", json=payload)
+    assert put_resp.status_code == 200
+    
+    # 3. Verify it's returned
+    verify_resp = client.get(f"/api/student/campaigns/{draft_campaign.id}")
+    updated_field = next(f for f in verify_resp.json()["fields"] if f["field_id"] == collect_field["field_id"])
+    assert updated_field["value"] == "9876543210"
+
+
+def test_update_responses_invalid_value_rejected(client, student_user, draft_campaign, db_session, mock_google_auth):
+    # Set validation config on the collect field
+    field = next(f for f in draft_campaign.fields if f.field_name == "Phone") # it's the collect field
+    field.validation_config = {
+        "type": "number",
+        "rules": {"min_value": 100}
+    }
+    draft_campaign.status = CampaignStatus.PUBLISHED
+    db_session.commit()
+    
+    _login_as_student(client, mock_google_auth)
+    
+    payload = {
+        "responses": [
+            {
+                "field_id": str(field.id),
+                "value": "50" # Invalid: less than min_value
+            }
+        ]
+    }
+    
+    put_resp = client.put(f"/api/student/campaigns/{draft_campaign.id}/responses", json=payload)
+    assert put_resp.status_code == 400
+    assert "field_errors" in put_resp.json()["detail"]
+    assert str(field.id) in put_resp.json()["detail"]["field_errors"]
+    
+    
+def test_update_responses_non_collect_rejected(client, student_user, draft_campaign, db_session, mock_google_auth):
+    draft_campaign.status = CampaignStatus.PUBLISHED
+    db_session.commit()
+    
+    field = next(f for f in draft_campaign.fields if f.field_name == "Name") # Not a collect field
+    
+    _login_as_student(client, mock_google_auth)
+    
+    payload = {
+        "responses": [
+            {
+                "field_id": str(field.id),
+                "value": "Hacked Name" 
+            }
+        ]
+    }
+    
+    put_resp = client.put(f"/api/student/campaigns/{draft_campaign.id}/responses", json=payload)
+    assert put_resp.status_code == 400
+    assert "does not accept student input" in put_resp.json()["detail"]["field_errors"][str(field.id)]
+
+
+def test_update_responses_already_submitted_rejected(client, student_user, draft_campaign, db_session, mock_google_auth):
+    draft_campaign.status = CampaignStatus.PUBLISHED
+    cs = db_session.query(CampaignStudent).filter(CampaignStudent.campaign_id == draft_campaign.id).first()
+    cs.status = SubmissionStatus.SUBMITTED
+    db_session.commit()
+    
+    field = next(f for f in draft_campaign.fields if f.field_name == "Phone")
+    
+    _login_as_student(client, mock_google_auth)
+    
+    payload = {
+        "responses": [
+            {
+                "field_id": str(field.id),
+                "value": "123456" 
+            }
+        ]
+    }
+    
+    put_resp = client.put(f"/api/student/campaigns/{draft_campaign.id}/responses", json=payload)
+    assert put_resp.status_code == 400
+    assert "has already been submitted" in put_resp.json()["detail"]
+
+def test_update_responses_duplicate_fields_rejected(client, student_user, draft_campaign, db_session, mock_google_auth):
+    draft_campaign.status = CampaignStatus.PUBLISHED
+    db_session.commit()
+    
+    _login_as_student(client, mock_google_auth)
+    
+    get_resp = client.get(f"/api/student/campaigns/{draft_campaign.id}")
+    collect_field = next(f for f in get_resp.json()["fields"] if f["requires_student_input"])
+    
+    payload = {
+        "responses": [
+            {
+                "field_id": collect_field["field_id"],
+                "value": "9876543210"
+            },
+            {
+                "field_id": collect_field["field_id"],
+                "value": "1234567890"
+            }
+        ]
+    }
+    
+    put_resp = client.put(f"/api/student/campaigns/{draft_campaign.id}/responses", json=payload)
+    assert put_resp.status_code == 400
+    assert "Duplicate field submission" in put_resp.json()["detail"]["field_errors"][collect_field["field_id"]]
+
+
+def test_update_responses_clearing_and_updating(client, student_user, draft_campaign, db_session, mock_google_auth):
+    # Set the field to optional
+    field = next(f for f in draft_campaign.fields if f.field_name == "Phone")
+    field.validation_config = {
+        "type": "text",
+        "rules": {"required": False}
+    }
+    draft_campaign.status = CampaignStatus.PUBLISHED
+    db_session.commit()
+    
+    _login_as_student(client, mock_google_auth)
+    
+    # 1. Save initial response
+    payload1 = {
+        "responses": [
+            {
+                "field_id": str(field.id),
+                "value": "initial_value"
+            }
+        ]
+    }
+    client.put(f"/api/student/campaigns/{draft_campaign.id}/responses", json=payload1)
+    
+    # Check it's there
+    resp1 = client.get(f"/api/student/campaigns/{draft_campaign.id}")
+    assert next(f for f in resp1.json()["fields"] if f["field_id"] == str(field.id))["value"] == "initial_value"
+    
+    # Check count in DB
+    assert db_session.query(StudentResponse).count() == 1
+    
+    # 2. Update response
+    payload2 = {
+        "responses": [
+            {
+                "field_id": str(field.id),
+                "value": "updated_value"
+            }
+        ]
+    }
+    client.put(f"/api/student/campaigns/{draft_campaign.id}/responses", json=payload2)
+    
+    resp2 = client.get(f"/api/student/campaigns/{draft_campaign.id}")
+    assert next(f for f in resp2.json()["fields"] if f["field_id"] == str(field.id))["value"] == "updated_value"
+    
+    # Count should still be 1 (updated, not duplicated)
+    assert db_session.query(StudentResponse).count() == 1
+    
+    # 3. Clear response
+    payload3 = {
+        "responses": [
+            {
+                "field_id": str(field.id),
+                "value": ""
+            }
+        ]
+    }
+    client.put(f"/api/student/campaigns/{draft_campaign.id}/responses", json=payload3)
+    
+    resp3 = client.get(f"/api/student/campaigns/{draft_campaign.id}")
+    assert next(f for f in resp3.json()["fields"] if f["field_id"] == str(field.id))["value"] is None
+    
+    # Count should be 0, but ImportedFieldValue is still there
+    assert db_session.query(StudentResponse).count() == 0
+    
+    # 4. Verify ImportedFieldValue remains [COLLECT]
+    iv = db_session.query(ImportedFieldValue).filter(ImportedFieldValue.campaign_field_id == field.id).first()
+    assert iv.imported_value == "[COLLECT]"

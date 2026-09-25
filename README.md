@@ -298,3 +298,11 @@ This removes both the container and the named volume. After this, you will need 
 This project is private and not yet licensed for distribution.
 # Student-Information-Portal
 # Student-Information-Portal
+
+
+cd backend
+.venv/bin/uvicorn app.main:app --reload
+
+
+cd frontend
+npm run dev

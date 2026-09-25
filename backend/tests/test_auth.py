@@ -253,6 +253,9 @@ def test_admin_email_bypass(monkeypatch, client, db_session):
         db_session.add(admin)
         db_session.commit()
     
+    admin.google_subject_id = None
+    db_session.commit()
+    
     # 2. Mock google auth to return this admin email without poornima domain
     def _mock_verify_admin(code: str):
         return {

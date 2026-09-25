@@ -15,6 +15,7 @@ env/
 
 # Environment variables
 .env
+.env.*
 
 # Node
 node_modules/
@@ -42,3 +43,5 @@ htmlcov/
 
 # Logs
 *.log
+
+/client_secret_232766992613-o82iaq8u9cvaoae84e737ujq1ji2cdsa.apps.googleusercontent.com.json

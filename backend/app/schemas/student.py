@@ -31,6 +31,7 @@ class StudentCampaignFieldResponse(BaseModel):
     field_order: int
     requires_student_input: bool
     value: str | None
+    validation_config: dict | None = None
 
 
 class StudentCampaignDetailResponse(BaseModel):
@@ -43,3 +44,13 @@ class StudentCampaignDetailResponse(BaseModel):
     campaign_status: CampaignStatus
     submission_status: SubmissionStatus
     fields: List[StudentCampaignFieldResponse]
+
+
+class StudentResponseUpdate(BaseModel):
+    field_id: uuid.UUID
+    value: str | None
+
+
+class StudentResponseUpdateRequest(BaseModel):
+    responses: List[StudentResponseUpdate]
+

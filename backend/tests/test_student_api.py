@@ -10,6 +10,7 @@ from app.models.campaign_student import CampaignStudent, SubmissionStatus
 from app.models.campaign_field import CampaignField
 from app.models.imported_field_value import ImportedFieldValue
 from app.models.student_response import StudentResponse
+from app.models.user import User, UserRole
 
 
 def _login_as_student(client: TestClient, mock_google_auth) -> str:
@@ -385,3 +386,132 @@ def test_update_responses_clearing_and_updating(client, student_user, draft_camp
     # 4. Verify ImportedFieldValue remains [COLLECT]
     iv = db_session.query(ImportedFieldValue).filter(ImportedFieldValue.campaign_field_id == field.id).first()
     assert iv.imported_value == "[COLLECT]"
+
+# --- Submission Tests ---
+
+def test_submit_campaign_unauthenticated(client):
+    resp = client.post(f"/api/student/campaigns/{uuid.uuid4()}/submit")
+    assert resp.status_code == 401
+
+
+def test_submit_campaign_as_admin_rejected(client, mock_google_auth, admin_user):
+    _login_as_admin(client, mock_google_auth)
+    resp = client.post(f"/api/student/campaigns/{uuid.uuid4()}/submit")
+    assert resp.status_code == 403
+
+
+def test_submit_campaign_not_enrolled(client, admin_user, student_user, db_session, mock_google_auth):
+    c = Campaign(name="Other", created_by_id=admin_user.id, status=CampaignStatus.PUBLISHED)
+    db_session.add(c)
+    db_session.commit()
+    
+    _login_as_student(client, mock_google_auth)
+    resp = client.post(f"/api/student/campaigns/{c.id}/submit")
+    assert resp.status_code == 404
+
+
+def test_submit_campaign_draft_rejected(client, draft_campaign, mock_google_auth):
+    _login_as_student(client, mock_google_auth)
+    resp = client.post(f"/api/student/campaigns/{draft_campaign.id}/submit")
+    assert resp.status_code == 404 # Not available because it's DRAFT
+
+
+def test_submit_campaign_missing_required_rejected(client, draft_campaign, db_session, mock_google_auth):
+    field = next(f for f in draft_campaign.fields if f.field_name == "Phone")
+    field.validation_config = {
+        "type": "text",
+        "rules": {"required": True}
+    }
+    draft_campaign.status = CampaignStatus.PUBLISHED
+    db_session.commit()
+    
+    _login_as_student(client, mock_google_auth)
+    
+    # Try submitting without answering
+    resp = client.post(f"/api/student/campaigns/{draft_campaign.id}/submit")
+    assert resp.status_code == 400
+    assert "field_errors" in resp.json()["detail"]
+    assert "required" in resp.json()["detail"]["field_errors"][str(field.id)].lower()
+
+
+def test_submit_campaign_valid_success_and_idempotency(client, draft_campaign, db_session, mock_google_auth):
+    field = next(f for f in draft_campaign.fields if f.field_name == "Phone")
+    field.validation_config = {
+        "type": "text",
+        "rules": {"required": True}
+    }
+    draft_campaign.status = CampaignStatus.PUBLISHED
+    db_session.commit()
+    
+    _login_as_student(client, mock_google_auth)
+    
+    # 1. Answer required field
+    client.put(f"/api/student/campaigns/{draft_campaign.id}/responses", json={
+        "responses": [{"field_id": str(field.id), "value": "Answer"}]
+    })
+    
+    # 2. Submit
+    resp = client.post(f"/api/student/campaigns/{draft_campaign.id}/submit")
+    assert resp.status_code == 200
+    
+    # Verify DB state
+    cs = db_session.query(CampaignStudent).filter(CampaignStudent.campaign_id == draft_campaign.id).first()
+    assert cs.status == SubmissionStatus.SUBMITTED
+    assert len(cs.submissions) == 1
+    
+    # 3. Submit again -> idempotently handled/rejected
+    resp2 = client.post(f"/api/student/campaigns/{draft_campaign.id}/submit")
+    assert resp2.status_code == 400
+    assert "already been submitted" in resp2.json()["detail"]
+    
+    # Submissions count should still be 1
+    db_session.refresh(cs)
+    assert len(cs.submissions) == 1
+    
+    # 4. Save response again -> rejected
+    put_resp = client.put(f"/api/student/campaigns/{draft_campaign.id}/responses", json={
+        "responses": [{"field_id": str(field.id), "value": "New Answer"}]
+    })
+    assert put_resp.status_code == 400
+    assert "already been submitted" in put_resp.json()["detail"]
+
+
+
+def test_submit_campaign_idor_rejected(client, admin_user, student_user, draft_campaign, db_session, mock_google_auth):
+    # Setup Student B
+    student_b = User(email="student_b@poornima.edu.in", role=UserRole.STUDENT, is_active=True, google_subject_id="sub_b")
+    db_session.add(student_b)
+    db_session.commit()
+    
+    # Enroll Student B
+    cs_b = CampaignStudent(campaign_id=draft_campaign.id, student_id=student_b.id, status=SubmissionStatus.PENDING)
+    db_session.add(cs_b)
+    db_session.commit()
+    
+    # Student A logic (main test client is student_user)
+    field = next(f for f in draft_campaign.fields if f.field_name == "Phone")
+    field.validation_config = {
+        "type": "text",
+        "rules": {"required": False} # optional so we can just submit
+    }
+    draft_campaign.status = CampaignStatus.PUBLISHED
+    db_session.commit()
+    
+    _login_as_student(client, mock_google_auth)
+    
+    # Student A submits the campaign
+    resp = client.post(f"/api/student/campaigns/{draft_campaign.id}/submit")
+    assert resp.status_code == 200
+    
+    # Verify Student A is SUBMITTED
+    cs_a = db_session.query(CampaignStudent).filter(
+        CampaignStudent.campaign_id == draft_campaign.id,
+        CampaignStudent.student_id == student_user.id
+    ).first()
+    assert cs_a.status == SubmissionStatus.SUBMITTED
+    
+    # Verify Student B is STILL PENDING
+    db_session.refresh(cs_b)
+    assert cs_b.status == SubmissionStatus.PENDING
+    assert len(cs_b.submissions) == 0
+

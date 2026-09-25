@@ -7,6 +7,7 @@ from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from app.database.session import get_db
 from app.models.campaign import Campaign, CampaignStatus
@@ -128,6 +129,7 @@ def get_campaign_detail(
         description=campaign.description,
         campaign_status=campaign.status,
         submission_status=membership.status,
+        submitted_at=membership.submissions[0].submitted_at if membership.submissions else None,
         fields=fields_resp,
     )
 
@@ -253,3 +255,113 @@ def update_responses(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail="Failed to save responses")
+
+from app.models.campaign_submission import CampaignSubmission
+from app.models.audit_log import AuditLog
+
+@router.post("/campaigns/{campaign_id}/submit")
+def submit_campaign(
+    campaign_id: uuid.UUID,
+    current_student: User = Depends(get_current_student),
+    db: Session = Depends(get_db),
+):
+    """
+    Permanently lock a campaign submission.
+    Validates that all required fields are provided before allowing submission.
+    """
+    # 1. Fetch membership
+    membership = (
+        db.query(CampaignStudent)
+        .join(Campaign, CampaignStudent.campaign_id == Campaign.id)
+        .filter(
+            CampaignStudent.student_id == current_student.id,
+            CampaignStudent.campaign_id == campaign_id,
+            Campaign.status != CampaignStatus.DRAFT,
+        )
+        .first()
+    )
+
+    if not membership:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Campaign not found or not available",
+        )
+        
+    if membership.status == SubmissionStatus.SUBMITTED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Campaign has already been submitted",
+        )
+        
+    # 2. Load fields and configurations
+    fields = {
+        f.id: f for f in db.query(CampaignField).filter(CampaignField.campaign_id == campaign_id).all()
+    }
+    
+    # 3. Load student's imported values (and their responses via relationship)
+    imported_values = db.query(ImportedFieldValue).filter(
+        ImportedFieldValue.campaign_student_id == membership.id
+    ).all()
+    
+    # 4. Validate all responses
+    errors = {}
+    
+    for iv in imported_values:
+        if not iv.requires_student_input:
+            continue
+            
+        field_model = fields.get(iv.campaign_field_id)
+        if not field_model:
+            continue
+            
+        vconfig_dict = field_model.validation_config or {"type": "text", "rules": {"required": False}}
+        vconfig = FieldValidationConfig.model_validate(vconfig_dict)
+        
+        student_response = iv.student_response.response_value if iv.student_response else None
+        
+        try:
+            # We strictly evaluate the existing DB value through the canonical validator
+            validate_field_value(student_response, vconfig)
+        except ValueError as e:
+            errors[str(iv.campaign_field_id)] = str(e)
+            
+    if errors:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"field_errors": errors},
+        )
+        
+    # 5. Atomically commit the submission
+    try:
+        with db.begin_nested():
+            # Update membership status
+            membership.status = SubmissionStatus.SUBMITTED
+            
+            # Create CampaignSubmission record
+            submission = CampaignSubmission(
+                campaign_student_id=membership.id
+            )
+            db.add(submission)
+            
+            # Create Audit Log
+            audit = AuditLog(
+                user_id=current_student.id,
+                action="student_submission",
+                entity_type="campaign_student",
+                entity_id=str(membership.id),
+                details={"campaign_id": str(campaign_id)}
+            )
+            db.add(audit)
+            
+        db.commit()
+        return {"message": "Campaign submitted successfully"}
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Campaign has already been submitted",
+        )
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to submit campaign")
+

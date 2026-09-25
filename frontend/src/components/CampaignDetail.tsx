@@ -12,6 +12,7 @@ export const CampaignDetail: React.FC<CampaignDetailProps> = ({ campaignId, onBa
   const [campaign, setCampaign] = useState<StudentCampaignDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   
@@ -113,15 +114,15 @@ export const CampaignDetail: React.FC<CampaignDetailProps> = ({ campaignId, onBa
     return isValid;
   };
 
-  const handleSave = async () => {
+  const handleSave = async (showSuccessMessage: boolean = true) => {
     setError(null);
-    setSaveMessage(null);
+    if (showSuccessMessage) setSaveMessage(null);
     setFieldErrors({});
     
     // 1. Frontend validation (not authoritative, but good UX)
     if (!validateFrontend()) {
       setError("Please fix the errors in the form before saving.");
-      return;
+      return false;
     }
     
     setSaving(true);
@@ -152,14 +153,62 @@ export const CampaignDetail: React.FC<CampaignDetailProps> = ({ campaignId, onBa
         throw new Error(data.detail || "Failed to save responses.");
       }
       
-      setSaveMessage(data.message || "Responses saved successfully!");
+      if (showSuccessMessage) {
+        setSaveMessage(data.message || "Responses saved successfully!");
+      }
       
       // Refresh to get normalized values from backend
       await fetchCampaign();
+      return true;
     } catch (err: any) {
       setError(err.message || "An unexpected error occurred during save.");
+      return false;
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleFinalSubmit = async () => {
+    if (!window.confirm("Are you sure you want to submit? After submission, you will not be able to change your responses.")) {
+      return;
+    }
+    
+    setSubmitting(true);
+    setError(null);
+    setSaveMessage(null);
+    
+    // Auto-save first
+    const saveOk = await handleSave(false);
+    if (!saveOk) {
+      setSubmitting(false);
+      return;
+    }
+    
+    try {
+      const response = await fetch(`${config.apiBaseUrl}/api/student/campaigns/${campaignId}/submit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include"
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        if (response.status === 400 && data.detail?.field_errors) {
+          setFieldErrors(data.detail.field_errors);
+          throw new Error("Please fix the highlighted errors before submitting.");
+        }
+        throw new Error(data.detail || "Failed to submit campaign.");
+      }
+      
+      setSaveMessage("Campaign submitted successfully. Your responses are now locked.");
+      
+      // Refresh to get new status
+      await fetchCampaign();
+    } catch (err: any) {
+      setError(err.message || "An unexpected error occurred during submission.");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -202,11 +251,14 @@ export const CampaignDetail: React.FC<CampaignDetailProps> = ({ campaignId, onBa
       <div className="campaign-form">
         <h3 className="form-title">Student Information</h3>
         <p className="form-subtitle">
-          Please verify the information below. Editable fields marked with an asterisk (*) require your input.
+          {isSubmitted 
+            ? `Your responses have been submitted and are locked. (Submitted at: ${new Date(campaign.submitted_at!).toLocaleString()})`
+            : "Please verify the information below. Editable fields marked with an asterisk (*) require your input."
+          }
         </p>
         
         {saveMessage && (
-          <div style={{ padding: "1rem", backgroundColor: "#ecfdf5", color: "#059669", borderRadius: "8px", marginBottom: "1rem" }}>
+          <div style={{ padding: "1rem", backgroundColor: "#ecfdf5", color: "#059669", borderRadius: "8px", marginBottom: "1rem", fontWeight: 500 }}>
             {saveMessage}
           </div>
         )}
@@ -225,18 +277,27 @@ export const CampaignDetail: React.FC<CampaignDetailProps> = ({ campaignId, onBa
               value={field.requires_student_input ? responses[field.field_id] || "" : undefined}
               onChange={field.requires_student_input ? (val) => handleResponseChange(field.field_id, val) : undefined}
               error={fieldErrors[field.field_id]}
-              disabled={isSubmitted || saving}
+              disabled={isSubmitted || saving || submitting}
             />
           ))}
         </div>
         
-        <div className="form-actions">
+        <div className="form-actions" style={{ display: "flex", gap: "1rem", marginTop: "2rem" }}>
+          <button 
+            className="btn btn-secondary" 
+            onClick={() => handleSave(true)}
+            disabled={saving || submitting || isSubmitted}
+          >
+            {saving ? "Saving..." : "Save Draft"}
+          </button>
+          
           <button 
             className="btn btn-primary" 
-            onClick={handleSave}
-            disabled={saving || isSubmitted}
+            onClick={handleFinalSubmit}
+            disabled={saving || submitting || isSubmitted}
+            style={{ marginLeft: "auto" }}
           >
-            {saving ? "Saving..." : (isSubmitted ? "Cannot edit submitted campaign" : "Save Responses")}
+            {submitting ? "Submitting..." : (isSubmitted ? "Submitted & Locked" : "Final Submit")}
           </button>
         </div>
       </div>

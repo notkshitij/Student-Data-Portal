@@ -26,5 +26,6 @@ export interface StudentCampaignDetailResponse {
   description: string | null;
   campaign_status: CampaignStatus;
   submission_status: SubmissionStatus;
+  submitted_at: string | null;
   fields: StudentCampaignFieldResponse[];
 }

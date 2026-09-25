@@ -43,6 +43,7 @@ class StudentCampaignDetailResponse(BaseModel):
     description: str | None
     campaign_status: CampaignStatus
     submission_status: SubmissionStatus
+    submitted_at: datetime | None = None
     fields: List[StudentCampaignFieldResponse]
 
 

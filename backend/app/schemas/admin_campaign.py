@@ -60,15 +60,25 @@ class AdminFormConfigResponse(BaseModel):
 
 
 class AdminFormFieldUpdate(BaseModel):
-    """Update payload for a single field's validation configuration and order."""
+    """Update payload for a single collectable field's validation configuration."""
     id: uuid.UUID
-    field_order: Optional[int] = None
     validation_config: FieldValidationConfig
 
 
+class FieldOrderUpdate(BaseModel):
+    """Update payload for a single field's ordering position."""
+    id: uuid.UUID
+    field_order: int
+
+
 class AdminFormConfigUpdateRequest(BaseModel):
-    """Bulk update payload for the form builder."""
-    fields: List[AdminFormFieldUpdate]
+    """Bulk update payload for the form builder.
+    
+    - field_orders: ordering for ALL fields (collectable + non-collectable)
+    - fields: validation config for collectable fields only (optional)
+    """
+    field_orders: List[FieldOrderUpdate] = []
+    fields: List[AdminFormFieldUpdate] = []
 
 
 # --- Campaign Progress and Submissions ---

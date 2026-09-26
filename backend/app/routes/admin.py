@@ -259,7 +259,7 @@ def update_campaign_form_config(
     admin: User = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    """Update the form validation configuration for a campaign's collect fields."""
+    """Update field ordering (all fields) and validation config (collectable fields only)."""
     campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
@@ -272,7 +272,8 @@ def update_campaign_form_config(
         )
         
     # Fetch all fields for this campaign
-    fields = {f.id: f for f in db.query(CampaignField).filter(CampaignField.campaign_id == campaign_id).all()}
+    all_campaign_fields = db.query(CampaignField).filter(CampaignField.campaign_id == campaign_id).all()
+    fields_by_id = {f.id: f for f in all_campaign_fields}
     
     # Identify collect fields
     collect_fields_subq = (
@@ -285,22 +286,71 @@ def update_campaign_form_config(
         row[0] for row in db.query(collect_fields_subq.c.campaign_field_id).all()
     }
     
-    updates_made = 0
+    orders_updated = 0
+    configs_updated = 0
+    
     try:
         with db.begin_nested():
+            # --- 1. Process field ordering (ALL fields) ---
+            if request.field_orders:
+                submitted_ids = set()
+                submitted_orders = set()
+                
+                for order_update in request.field_orders:
+                    fid = order_update.id
+                    
+                    if fid not in fields_by_id:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Field {fid} does not belong to this campaign"
+                        )
+                    
+                    if fid in submitted_ids:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Duplicate field ID in ordering: {fid}"
+                        )
+                    submitted_ids.add(fid)
+                    
+                    if order_update.field_order in submitted_orders:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Duplicate field_order position: {order_update.field_order}"
+                        )
+                    submitted_orders.add(order_update.field_order)
+                
+                # Verify ALL campaign fields are present
+                if submitted_ids != set(fields_by_id.keys()):
+                    missing = set(fields_by_id.keys()) - submitted_ids
+                    extra = submitted_ids - set(fields_by_id.keys())
+                    detail_parts = []
+                    if missing:
+                        detail_parts.append(f"Missing fields: {[str(x) for x in missing]}")
+                    if extra:
+                        detail_parts.append(f"Extra fields: {[str(x) for x in extra]}")
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Ordering must include all campaign fields. {'; '.join(detail_parts)}"
+                    )
+                
+                # Apply ordering
+                for order_update in request.field_orders:
+                    field = fields_by_id[order_update.id]
+                    if field.field_order != order_update.field_order:
+                        field.field_order = order_update.field_order
+                        orders_updated += 1
+            
+            # --- 2. Process validation config (collectable fields only) ---
             for update_field in request.fields:
                 field_id = update_field.id
-                if field_id not in fields:
+                if field_id not in fields_by_id:
                     raise HTTPException(status_code=400, detail=f"Field {field_id} does not belong to this campaign")
                 if field_id not in collect_field_ids:
                     raise HTTPException(status_code=400, detail=f"Field {field_id} is not a collect field and cannot be configured")
                     
-                field = fields[field_id]
-                # Pydantic has already validated and normalized update_field.validation_config
+                field = fields_by_id[field_id]
                 field.validation_config = update_field.validation_config.model_dump()
-                if update_field.field_order is not None and field.field_order != update_field.field_order:
-                    field.field_order = update_field.field_order
-                updates_made += 1
+                configs_updated += 1
                 
         # Create audit log
         audit = AuditLog(
@@ -308,7 +358,7 @@ def update_campaign_form_config(
             action="form_config_updated",
             entity_type="campaign",
             entity_id=str(campaign_id),
-            details={"fields_updated": updates_made}
+            details={"orders_updated": orders_updated, "configs_updated": configs_updated}
         )
         db.add(audit)
         

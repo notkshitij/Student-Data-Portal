@@ -76,7 +76,13 @@ export interface AdminFormFieldUpdate {
   validation_config: FieldValidationConfig;
 }
 
+export interface FieldOrderUpdate {
+  id: string;
+  field_order: number;
+}
+
 export interface AdminFormConfigUpdateRequest {
+  field_orders: FieldOrderUpdate[];
   fields: AdminFormFieldUpdate[];
 }
 

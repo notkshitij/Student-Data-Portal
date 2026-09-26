@@ -7,16 +7,27 @@ import { AdminCampaignProgress } from "./AdminCampaignProgress";
 interface AdminCampaignDetailProps {
   campaignId: string;
   onBack: () => void;
+  initialTab?: string;
+  onTabChange?: (tab: string) => void;
 }
 
-export const AdminCampaignDetail: React.FC<AdminCampaignDetailProps> = ({ campaignId, onBack }) => {
+export const AdminCampaignDetail: React.FC<AdminCampaignDetailProps> = ({ campaignId, onBack, initialTab, onTabChange }) => {
   const [campaign, setCampaign] = useState<AdminCampaignDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isPublishing, setIsPublishing] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [publishMessage, setPublishMessage] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"overview" | "form" | "students">("overview");
+  
+  const validTabs = ["overview", "form", "students"] as const;
+  type TabType = typeof validTabs[number];
+  const resolvedInitialTab = validTabs.includes(initialTab as TabType) ? (initialTab as TabType) : "overview";
+  const [activeTab, setActiveTabLocal] = useState<TabType>(resolvedInitialTab);
+
+  const setActiveTab = (tab: TabType) => {
+    setActiveTabLocal(tab);
+    onTabChange?.(tab);
+  };
 
   const fetchCampaign = async () => {
     try {

@@ -1037,3 +1037,429 @@ def test_reopen_campaign_permissions(client, admin_user, draft_campaign, db_sess
         AuditLog.entity_id == str(camp.id)
     ).first()
     assert audit is not None
+
+
+# =====================================================================
+# Field Ordering Tests
+# =====================================================================
+
+
+def _create_multi_field_campaign(db_session, admin_user, student_user):
+    """Helper: create a campaign with 5 fields (3 non-collect, 2 collect)."""
+    from app.models.campaign import Campaign, CampaignStatus
+    from app.models.campaign_field import CampaignField
+    from app.models.campaign_student import CampaignStudent
+    from app.models.imported_field_value import ImportedFieldValue
+
+    c = Campaign(name="Order Test Campaign", created_by_id=admin_user.id, status=CampaignStatus.DRAFT)
+    db_session.add(c)
+    db_session.commit()
+
+    cs = CampaignStudent(campaign_id=c.id, student_id=student_user.id)
+    db_session.add(cs)
+
+    fields = []
+    field_data = [
+        ("Name", 0, False, "Alice"),
+        ("Email", 1, False, "alice@poornima.edu.in"),
+        ("Roll Number", 2, False, "R001"),
+        ("Phone", 3, True, None),
+        ("Address", 4, True, None),
+    ]
+    for fname, order, is_collect, val in field_data:
+        f = CampaignField(campaign_id=c.id, field_name=fname, field_order=order)
+        db_session.add(f)
+        fields.append((f, is_collect, val))
+
+    db_session.commit()
+
+    for f, is_collect, val in fields:
+        iv = ImportedFieldValue(
+            campaign_student_id=cs.id,
+            campaign_field_id=f.id,
+            imported_value=val,
+            requires_student_input=is_collect,
+        )
+        db_session.add(iv)
+    db_session.commit()
+
+    return c, [f for f, _, _ in fields]
+
+
+def test_get_form_returns_all_fields_in_canonical_order(client, admin_user, student_user, db_session, mock_google_auth):
+    """GET /form returns ALL fields ordered by field_order."""
+    _login_as_admin(client, mock_google_auth)
+    c, fields = _create_multi_field_campaign(db_session, admin_user, student_user)
+
+    resp = client.get(f"/api/admin/campaigns/{c.id}/form")
+    assert resp.status_code == 200
+    data = resp.json()
+
+    assert len(data["fields"]) == 5
+    names = [f["field_name"] for f in data["fields"]]
+    assert names == ["Name", "Email", "Roll Number", "Phone", "Address"]
+
+    # Check requires_student_input is correct
+    for f in data["fields"]:
+        if f["field_name"] in ("Phone", "Address"):
+            assert f["requires_student_input"] is True
+        else:
+            assert f["requires_student_input"] is False
+
+
+def test_all_fields_have_an_order(client, admin_user, student_user, db_session, mock_google_auth):
+    """Every field returned by GET has a field_order."""
+    _login_as_admin(client, mock_google_auth)
+    c, _ = _create_multi_field_campaign(db_session, admin_user, student_user)
+
+    resp = client.get(f"/api/admin/campaigns/{c.id}/form")
+    for f in resp.json()["fields"]:
+        assert "field_order" in f
+        assert isinstance(f["field_order"], int)
+
+
+def test_reorder_all_fields_and_persist(client, admin_user, student_user, db_session, mock_google_auth):
+    """Save a new order for ALL fields and verify it persists."""
+    _login_as_admin(client, mock_google_auth)
+    c, _ = _create_multi_field_campaign(db_session, admin_user, student_user)
+
+    get_resp = client.get(f"/api/admin/campaigns/{c.id}/form")
+    all_fields = get_resp.json()["fields"]
+
+    # Reverse the order: Address, Phone, Roll Number, Email, Name
+    reversed_fields = list(reversed(all_fields))
+    field_orders = [{"id": f["id"], "field_order": i} for i, f in enumerate(reversed_fields)]
+
+    # Only send collectable validation configs
+    collect_configs = [
+        {"id": f["id"], "validation_config": f["validation_config"]}
+        for f in reversed_fields if f["requires_student_input"] and f["validation_config"]
+    ]
+
+    put_resp = client.put(f"/api/admin/campaigns/{c.id}/form", json={
+        "field_orders": field_orders,
+        "fields": collect_configs,
+    })
+    assert put_resp.status_code == 200
+
+    # Reload and verify order persisted
+    verify_resp = client.get(f"/api/admin/campaigns/{c.id}/form")
+    verified_names = [f["field_name"] for f in verify_resp.json()["fields"]]
+    assert verified_names == ["Address", "Phone", "Roll Number", "Email", "Name"]
+
+
+def test_reorder_collectable_fields(client, admin_user, student_user, db_session, mock_google_auth):
+    """Reorder collectable fields while keeping non-collectable in place."""
+    _login_as_admin(client, mock_google_auth)
+    c, _ = _create_multi_field_campaign(db_session, admin_user, student_user)
+
+    get_resp = client.get(f"/api/admin/campaigns/{c.id}/form")
+    all_fields = get_resp.json()["fields"]
+
+    # Swap Phone(3) and Address(4)
+    new_order = []
+    for f in all_fields:
+        if f["field_name"] == "Phone":
+            new_order.append({"id": f["id"], "field_order": 4})
+        elif f["field_name"] == "Address":
+            new_order.append({"id": f["id"], "field_order": 3})
+        else:
+            new_order.append({"id": f["id"], "field_order": f["field_order"]})
+
+    collect_configs = [
+        {"id": f["id"], "validation_config": f["validation_config"]}
+        for f in all_fields if f["requires_student_input"] and f["validation_config"]
+    ]
+
+    put_resp = client.put(f"/api/admin/campaigns/{c.id}/form", json={
+        "field_orders": new_order,
+        "fields": collect_configs,
+    })
+    assert put_resp.status_code == 200
+
+    verify = client.get(f"/api/admin/campaigns/{c.id}/form")
+    names = [f["field_name"] for f in verify.json()["fields"]]
+    assert names == ["Name", "Email", "Roll Number", "Address", "Phone"]
+
+
+def test_reorder_non_collectable_fields(client, admin_user, student_user, db_session, mock_google_auth):
+    """Non-collectable fields can be reordered."""
+    _login_as_admin(client, mock_google_auth)
+    c, _ = _create_multi_field_campaign(db_session, admin_user, student_user)
+
+    get_resp = client.get(f"/api/admin/campaigns/{c.id}/form")
+    all_fields = get_resp.json()["fields"]
+
+    # New order: Roll Number, Email, Name, Phone, Address
+    desired = ["Roll Number", "Email", "Name", "Phone", "Address"]
+    id_map = {f["field_name"]: f["id"] for f in all_fields}
+    field_orders = [{"id": id_map[name], "field_order": i} for i, name in enumerate(desired)]
+
+    collect_configs = [
+        {"id": f["id"], "validation_config": f["validation_config"]}
+        for f in all_fields if f["requires_student_input"] and f["validation_config"]
+    ]
+
+    put_resp = client.put(f"/api/admin/campaigns/{c.id}/form", json={
+        "field_orders": field_orders,
+        "fields": collect_configs,
+    })
+    assert put_resp.status_code == 200
+
+    verify = client.get(f"/api/admin/campaigns/{c.id}/form")
+    names = [f["field_name"] for f in verify.json()["fields"]]
+    assert names == desired
+
+
+def test_reorder_mixed_collectable_and_non_collectable(client, admin_user, student_user, db_session, mock_google_auth):
+    """Interleave collectable and non-collectable fields in a new order."""
+    _login_as_admin(client, mock_google_auth)
+    c, _ = _create_multi_field_campaign(db_session, admin_user, student_user)
+
+    get_resp = client.get(f"/api/admin/campaigns/{c.id}/form")
+    all_fields = get_resp.json()["fields"]
+
+    # New order: Phone, Name, Address, Roll Number, Email
+    desired = ["Phone", "Name", "Address", "Roll Number", "Email"]
+    id_map = {f["field_name"]: f["id"] for f in all_fields}
+    field_orders = [{"id": id_map[name], "field_order": i} for i, name in enumerate(desired)]
+
+    collect_configs = [
+        {"id": f["id"], "validation_config": f["validation_config"]}
+        for f in all_fields if f["requires_student_input"] and f["validation_config"]
+    ]
+
+    put_resp = client.put(f"/api/admin/campaigns/{c.id}/form", json={
+        "field_orders": field_orders,
+        "fields": collect_configs,
+    })
+    assert put_resp.status_code == 200
+
+    verify = client.get(f"/api/admin/campaigns/{c.id}/form")
+    names = [f["field_name"] for f in verify.json()["fields"]]
+    assert names == desired
+
+
+def test_duplicate_order_positions_rejected(client, admin_user, student_user, db_session, mock_google_auth):
+    """Duplicate field_order positions must be rejected."""
+    _login_as_admin(client, mock_google_auth)
+    c, _ = _create_multi_field_campaign(db_session, admin_user, student_user)
+
+    get_resp = client.get(f"/api/admin/campaigns/{c.id}/form")
+    all_fields = get_resp.json()["fields"]
+
+    # All fields get order 0 (duplicates)
+    field_orders = [{"id": f["id"], "field_order": 0} for f in all_fields]
+
+    put_resp = client.put(f"/api/admin/campaigns/{c.id}/form", json={
+        "field_orders": field_orders,
+        "fields": [],
+    })
+    assert put_resp.status_code == 400
+    assert "Duplicate" in put_resp.json()["detail"]
+
+
+def test_incomplete_field_list_rejected(client, admin_user, student_user, db_session, mock_google_auth):
+    """Ordering must include ALL campaign fields."""
+    _login_as_admin(client, mock_google_auth)
+    c, _ = _create_multi_field_campaign(db_session, admin_user, student_user)
+
+    get_resp = client.get(f"/api/admin/campaigns/{c.id}/form")
+    all_fields = get_resp.json()["fields"]
+
+    # Only send 3 of 5 fields
+    field_orders = [{"id": f["id"], "field_order": i} for i, f in enumerate(all_fields[:3])]
+
+    put_resp = client.put(f"/api/admin/campaigns/{c.id}/form", json={
+        "field_orders": field_orders,
+        "fields": [],
+    })
+    assert put_resp.status_code == 400
+    assert "all campaign fields" in put_resp.json()["detail"]
+
+
+def test_cross_campaign_field_rejected(client, admin_user, student_user, db_session, mock_google_auth):
+    """Fields from another campaign cannot be reordered."""
+    _login_as_admin(client, mock_google_auth)
+    c1, _ = _create_multi_field_campaign(db_session, admin_user, student_user)
+
+    # Create a second campaign with a field
+    from app.models.campaign import Campaign, CampaignStatus
+    from app.models.campaign_field import CampaignField
+    c2 = Campaign(name="Other Campaign", created_by_id=admin_user.id, status=CampaignStatus.DRAFT)
+    db_session.add(c2)
+    db_session.commit()
+    f_other = CampaignField(campaign_id=c2.id, field_name="Other", field_order=0)
+    db_session.add(f_other)
+    db_session.commit()
+
+    get_resp = client.get(f"/api/admin/campaigns/{c1.id}/form")
+    all_fields = get_resp.json()["fields"]
+    field_orders = [{"id": f["id"], "field_order": i} for i, f in enumerate(all_fields)]
+
+    # Inject the other campaign's field
+    field_orders.append({"id": str(f_other.id), "field_order": len(field_orders)})
+
+    put_resp = client.put(f"/api/admin/campaigns/{c1.id}/form", json={
+        "field_orders": field_orders,
+        "fields": [],
+    })
+    assert put_resp.status_code == 400
+    assert "does not belong" in put_resp.json()["detail"]
+
+
+def test_reorder_does_not_change_requires_student_input(client, admin_user, student_user, db_session, mock_google_auth):
+    """Reordering must NOT change requires_student_input."""
+    _login_as_admin(client, mock_google_auth)
+    c, _ = _create_multi_field_campaign(db_session, admin_user, student_user)
+
+    get_resp = client.get(f"/api/admin/campaigns/{c.id}/form")
+    all_fields = get_resp.json()["fields"]
+
+    # Record original requires_student_input for each field by id
+    original_input = {f["id"]: f["requires_student_input"] for f in all_fields}
+
+    # Reverse the order
+    reversed_fields = list(reversed(all_fields))
+    field_orders = [{"id": f["id"], "field_order": i} for i, f in enumerate(reversed_fields)]
+    collect_configs = [
+        {"id": f["id"], "validation_config": f["validation_config"]}
+        for f in all_fields if f["requires_student_input"] and f["validation_config"]
+    ]
+
+    client.put(f"/api/admin/campaigns/{c.id}/form", json={
+        "field_orders": field_orders,
+        "fields": collect_configs,
+    })
+
+    verify = client.get(f"/api/admin/campaigns/{c.id}/form")
+    for f in verify.json()["fields"]:
+        assert f["requires_student_input"] == original_input[f["id"]]
+
+
+def test_reorder_does_not_change_validation_config(client, admin_user, student_user, db_session, mock_google_auth):
+    """Reordering must NOT change validation_config."""
+    _login_as_admin(client, mock_google_auth)
+    c, _ = _create_multi_field_campaign(db_session, admin_user, student_user)
+
+    # First, set a specific config on a collectable field
+    get_resp = client.get(f"/api/admin/campaigns/{c.id}/form")
+    all_fields = get_resp.json()["fields"]
+    phone_field = [f for f in all_fields if f["field_name"] == "Phone"][0]
+
+    field_orders = [{"id": f["id"], "field_order": f["field_order"]} for f in all_fields]
+    client.put(f"/api/admin/campaigns/{c.id}/form", json={
+        "field_orders": field_orders,
+        "fields": [{"id": phone_field["id"], "validation_config": {"type": "phone", "rules": {"required": True}}}],
+    })
+
+    # Now reorder
+    all_fields_2 = client.get(f"/api/admin/campaigns/{c.id}/form").json()["fields"]
+    reversed_fields = list(reversed(all_fields_2))
+    field_orders_2 = [{"id": f["id"], "field_order": i} for i, f in enumerate(reversed_fields)]
+    # Only send ordering, no config changes
+    client.put(f"/api/admin/campaigns/{c.id}/form", json={
+        "field_orders": field_orders_2,
+        "fields": [],
+    })
+
+    # Verify phone config is preserved
+    verify = client.get(f"/api/admin/campaigns/{c.id}/form")
+    phone_after = [f for f in verify.json()["fields"] if f["field_name"] == "Phone"][0]
+    assert phone_after["validation_config"]["type"] == "phone"
+    assert phone_after["validation_config"]["rules"]["required"] is True
+
+
+def test_student_api_returns_canonical_order(client, admin_user, student_user, db_session, mock_google_auth):
+    """Student campaign detail returns fields in the same canonical order as admin."""
+    c, _ = _create_multi_field_campaign(db_session, admin_user, student_user)
+
+    # Reorder as admin: Phone, Name, Address, Roll Number, Email
+    _login_as_admin(client, mock_google_auth)
+    get_resp = client.get(f"/api/admin/campaigns/{c.id}/form")
+    all_fields = get_resp.json()["fields"]
+    desired = ["Phone", "Name", "Address", "Roll Number", "Email"]
+    id_map = {f["field_name"]: f["id"] for f in all_fields}
+    field_orders = [{"id": id_map[name], "field_order": i} for i, name in enumerate(desired)]
+    collect_configs = [
+        {"id": f["id"], "validation_config": f["validation_config"]}
+        for f in all_fields if f["requires_student_input"] and f["validation_config"]
+    ]
+    client.put(f"/api/admin/campaigns/{c.id}/form", json={
+        "field_orders": field_orders,
+        "fields": collect_configs,
+    })
+
+    # Publish the campaign
+    client.post(f"/api/admin/campaigns/{c.id}/publish")
+
+    # Login as student
+    from tests.test_student_api import _login_as_student
+    token = _login_as_student(client, mock_google_auth)
+    client.cookies.set("session_token", token)
+
+    student_resp = client.get(f"/api/student/campaigns/{c.id}")
+    assert student_resp.status_code == 200
+    student_names = [f["field_name"] for f in student_resp.json()["fields"]]
+    assert student_names == desired
+
+
+def test_collect_values_remain_protected_after_reorder(client, admin_user, student_user, db_session, mock_google_auth):
+    """After reordering, [COLLECT] values must NOT be exposed to students."""
+    c, _ = _create_multi_field_campaign(db_session, admin_user, student_user)
+
+    # Reorder
+    _login_as_admin(client, mock_google_auth)
+    get_resp = client.get(f"/api/admin/campaigns/{c.id}/form")
+    all_fields = get_resp.json()["fields"]
+    reversed_fields = list(reversed(all_fields))
+    field_orders = [{"id": f["id"], "field_order": i} for i, f in enumerate(reversed_fields)]
+    collect_configs = [
+        {"id": f["id"], "validation_config": f["validation_config"]}
+        for f in all_fields if f["requires_student_input"] and f["validation_config"]
+    ]
+    client.put(f"/api/admin/campaigns/{c.id}/form", json={
+        "field_orders": field_orders,
+        "fields": collect_configs,
+    })
+
+    # Publish
+    client.post(f"/api/admin/campaigns/{c.id}/publish")
+
+    # Login as student
+    from tests.test_student_api import _login_as_student
+    token = _login_as_student(client, mock_google_auth)
+    client.cookies.set("session_token", token)
+
+    student_resp = client.get(f"/api/student/campaigns/{c.id}")
+    for f in student_resp.json()["fields"]:
+        if f["requires_student_input"]:
+            # Value must be None (not [COLLECT])
+            assert f["value"] is None or "[COLLECT]" not in str(f["value"]).upper()
+        else:
+            # Non-collect fields should have their actual value
+            assert f["value"] is not None
+
+
+def test_ordering_only_save_no_config(client, admin_user, student_user, db_session, mock_google_auth):
+    """Can submit only field_orders without fields (config) and it works."""
+    _login_as_admin(client, mock_google_auth)
+    c, _ = _create_multi_field_campaign(db_session, admin_user, student_user)
+
+    get_resp = client.get(f"/api/admin/campaigns/{c.id}/form")
+    all_fields = get_resp.json()["fields"]
+
+    reversed_fields = list(reversed(all_fields))
+    field_orders = [{"id": f["id"], "field_order": i} for i, f in enumerate(reversed_fields)]
+
+    # Send ONLY ordering, no validation config
+    put_resp = client.put(f"/api/admin/campaigns/{c.id}/form", json={
+        "field_orders": field_orders,
+        "fields": [],
+    })
+    assert put_resp.status_code == 200
+
+    verify = client.get(f"/api/admin/campaigns/{c.id}/form")
+    names = [f["field_name"] for f in verify.json()["fields"]]
+    assert names == ["Address", "Phone", "Roll Number", "Email", "Name"]
+

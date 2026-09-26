@@ -162,6 +162,55 @@ export const AdminFormBuilder: React.FC<AdminFormBuilderProps> = ({ campaignId, 
   const [error, setError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
+  // Auto-scroll mechanism refs
+  const scrollContainerRef = React.useRef<HTMLDivElement>(null);
+  const dragState = React.useRef({ isDragging: false, clientY: 0 });
+  const scrollAnimationRef = React.useRef<number | null>(null);
+
+  useEffect(() => {
+    const handlePointerMove = (e: PointerEvent) => {
+      if (dragState.current.isDragging) {
+        dragState.current.clientY = e.clientY;
+      }
+    };
+    window.addEventListener('pointermove', handlePointerMove);
+    return () => window.removeEventListener('pointermove', handlePointerMove);
+  }, []);
+
+  const startAutoScroll = () => {
+    if (scrollAnimationRef.current !== null) return;
+
+    const scrollLoop = () => {
+      if (!dragState.current.isDragging || !scrollContainerRef.current) {
+        scrollAnimationRef.current = null;
+        return;
+      }
+
+      const container = scrollContainerRef.current;
+      const rect = container.getBoundingClientRect();
+      const threshold = 80; // 80px from top/bottom edge for smooth detection
+      const { clientY } = dragState.current;
+
+      if (clientY > 0) {
+        // Only trigger if we are somewhat horizontally aligned with the container to prevent accidental scrolls when pointer is far away
+        if (clientY < rect.top + threshold) {
+          // Scroll up
+          const distance = rect.top + threshold - clientY;
+          const speed = Math.max(2, Math.min(distance * 0.4, 20)); // scale speed up to 20px/frame
+          container.scrollTop -= speed;
+        } else if (clientY > rect.bottom - threshold) {
+          // Scroll down
+          const distance = clientY - (rect.bottom - threshold);
+          const speed = Math.max(2, Math.min(distance * 0.4, 20));
+          container.scrollTop += speed;
+        }
+      }
+
+      scrollAnimationRef.current = requestAnimationFrame(scrollLoop);
+    };
+    scrollAnimationRef.current = requestAnimationFrame(scrollLoop);
+  };
+
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -197,7 +246,18 @@ export const AdminFormBuilder: React.FC<AdminFormBuilderProps> = ({ campaignId, 
     }
   };
 
+  const handleDragStart = () => {
+    dragState.current.isDragging = true;
+    dragState.current.clientY = 0; // reset
+    startAutoScroll();
+  };
+
+  const handleDragCancel = () => {
+    dragState.current.isDragging = false;
+  };
+
   const handleDragEnd = (event: DragEndEvent) => {
+    dragState.current.isDragging = false;
     const { active, over } = event;
     
     if (over && active.id !== over.id) {
@@ -595,7 +655,9 @@ export const AdminFormBuilder: React.FC<AdminFormBuilderProps> = ({ campaignId, 
             Drag and drop fields here to reorder them.
           </p>
           
-          <div style={{ 
+          <div 
+            ref={scrollContainerRef}
+            style={{ 
             border: "1px solid #e5e7eb", 
             borderRadius: "8px", 
             padding: "1.5rem", 
@@ -614,7 +676,10 @@ export const AdminFormBuilder: React.FC<AdminFormBuilderProps> = ({ campaignId, 
               <DndContext 
                 sensors={sensors}
                 collisionDetection={closestCenter}
+                onDragStart={handleDragStart}
+                onDragMove={() => {}}
                 onDragEnd={handleDragEnd}
+                onDragCancel={handleDragCancel}
               >
                 <SortableContext 
                   items={orderedFields.map(f => f.id)}

@@ -79,3 +79,46 @@ export interface AdminFormFieldUpdate {
 export interface AdminFormConfigUpdateRequest {
   fields: AdminFormFieldUpdate[];
 }
+
+export interface AdminCampaignProgressResponse {
+  campaign_id: string;
+  campaign_name: string;
+  campaign_status: CampaignStatus;
+  total_students: number;
+  pending_students: number;
+  submitted_students: number;
+  submission_percentage: number;
+}
+
+export interface AdminStudentListResponse {
+  student_id: string;
+  email: string;
+  status: "PENDING" | "SUBMITTED";
+  submitted_at: string | null;
+}
+
+export interface AdminStudentListPaginatedResponse {
+  items: AdminStudentListResponse[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface AdminStudentDetailField {
+  field_id: string;
+  field_name: string;
+  field_order: number;
+  requires_student_input: boolean;
+  imported_value: string | null;
+  student_response: string | null;
+  validation_config: FieldValidationConfig | null;
+}
+
+export interface AdminStudentDetailResponse {
+  student_id: string;
+  email: string;
+  campaign_id: string;
+  status: "PENDING" | "SUBMITTED";
+  submitted_at: string | null;
+  fields: AdminStudentDetailField[];
+}

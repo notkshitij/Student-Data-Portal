@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { config } from "../config";
 import type { AdminCampaignDetailResponse } from "../types/admin";
 import { AdminFormBuilder } from "./AdminFormBuilder";
+import { AdminCampaignProgress } from "./AdminCampaignProgress";
 
 interface AdminCampaignDetailProps {
   campaignId: string;
@@ -13,6 +14,7 @@ export const AdminCampaignDetail: React.FC<AdminCampaignDetailProps> = ({ campai
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isPublishing, setIsPublishing] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
   const [publishMessage, setPublishMessage] = useState<string | null>(null);
 
   const fetchCampaign = async () => {
@@ -36,6 +38,37 @@ export const AdminCampaignDetail: React.FC<AdminCampaignDetailProps> = ({ campai
   useEffect(() => {
     fetchCampaign();
   }, [campaignId]);
+
+  const handleClose = async () => {
+    if (!window.confirm("Closing this campaign will prevent students from making further changes or submitting responses. Existing responses and submissions will be preserved. Continue?")) {
+      return;
+    }
+    
+    setIsClosing(true);
+    setPublishMessage(null);
+    setError(null);
+    
+    try {
+      const response = await fetch(`${config.apiBaseUrl}/api/admin/campaigns/${campaignId}/close`, {
+        method: "POST",
+        credentials: "include",
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.detail || "Failed to close campaign.");
+      }
+      
+      setPublishMessage(data.message || "Campaign closed successfully!");
+      // Refresh campaign to get updated status
+      await fetchCampaign();
+    } catch (err: any) {
+      setError(err.message || "An unexpected error occurred during closing.");
+    } finally {
+      setIsClosing(false);
+    }
+  };
 
   const handlePublish = async () => {
     if (!window.confirm("Are you sure you want to publish this campaign? It will become visible to students.")) {
@@ -138,12 +171,27 @@ export const AdminCampaignDetail: React.FC<AdminCampaignDetailProps> = ({ campai
             </button>
           </div>
         )}
+
+        {campaign.status === "PUBLISHED" && (
+          <div className="form-actions">
+            <button 
+              className="btn btn-danger" 
+              onClick={handleClose}
+              disabled={isClosing}
+              style={{ backgroundColor: "#ef4444", color: "white", borderColor: "#ef4444" }}
+            >
+              {isClosing ? "Closing..." : "Close Campaign"}
+            </button>
+          </div>
+        )}
       </div>
 
       <AdminFormBuilder 
         campaignId={campaignId} 
         disabled={campaign.status !== "DRAFT"} 
       />
+
+      <AdminCampaignProgress campaignId={campaignId} />
     </div>
   );
 };

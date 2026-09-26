@@ -230,6 +230,8 @@ export const CampaignDetail: React.FC<CampaignDetailProps> = ({ campaignId, onBa
   }
 
   const isSubmitted = campaign.submission_status === "SUBMITTED";
+  const isClosed = campaign.campaign_status === "CLOSED";
+  const isLocked = isSubmitted || isClosed;
 
   return (
     <div className="campaign-detail">
@@ -253,6 +255,8 @@ export const CampaignDetail: React.FC<CampaignDetailProps> = ({ campaignId, onBa
         <p className="form-subtitle">
           {isSubmitted 
             ? `Your responses have been submitted and are locked. (Submitted at: ${new Date(campaign.submitted_at!).toLocaleString()})`
+            : isClosed
+            ? "This campaign is closed and is no longer accepting submissions or changes."
             : "Please verify the information below. Editable fields marked with an asterisk (*) require your input."
           }
         </p>
@@ -277,7 +281,7 @@ export const CampaignDetail: React.FC<CampaignDetailProps> = ({ campaignId, onBa
               value={field.requires_student_input ? responses[field.field_id] || "" : undefined}
               onChange={field.requires_student_input ? (val) => handleResponseChange(field.field_id, val) : undefined}
               error={fieldErrors[field.field_id]}
-              disabled={isSubmitted || saving || submitting}
+              disabled={isLocked || saving || submitting}
             />
           ))}
         </div>
@@ -286,7 +290,7 @@ export const CampaignDetail: React.FC<CampaignDetailProps> = ({ campaignId, onBa
           <button 
             className="btn btn-secondary" 
             onClick={() => handleSave(true)}
-            disabled={saving || submitting || isSubmitted}
+            disabled={saving || submitting || isLocked}
           >
             {saving ? "Saving..." : "Save Draft"}
           </button>
@@ -294,10 +298,10 @@ export const CampaignDetail: React.FC<CampaignDetailProps> = ({ campaignId, onBa
           <button 
             className="btn btn-primary" 
             onClick={handleFinalSubmit}
-            disabled={saving || submitting || isSubmitted}
+            disabled={saving || submitting || isLocked}
             style={{ marginLeft: "auto" }}
           >
-            {submitting ? "Submitting..." : (isSubmitted ? "Submitted & Locked" : "Final Submit")}
+            {submitting ? "Submitting..." : (isSubmitted ? "Submitted & Locked" : isClosed ? "Campaign Closed" : "Final Submit")}
           </button>
         </div>
       </div>

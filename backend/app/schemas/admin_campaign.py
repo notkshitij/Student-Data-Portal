@@ -69,3 +69,49 @@ class AdminFormConfigUpdateRequest(BaseModel):
     """Bulk update payload for the form builder."""
     fields: List[AdminFormFieldUpdate]
 
+
+# --- Campaign Progress and Submissions ---
+
+from app.models.campaign_student import SubmissionStatus
+
+class AdminCampaignProgressResponse(BaseModel):
+    campaign_id: uuid.UUID
+    campaign_name: str
+    campaign_status: CampaignStatus
+    total_students: int
+    pending_students: int
+    submitted_students: int
+    submission_percentage: float
+
+
+class AdminStudentListResponse(BaseModel):
+    student_id: uuid.UUID
+    email: str
+    status: SubmissionStatus
+    submitted_at: datetime | None
+
+
+class AdminStudentListPaginatedResponse(BaseModel):
+    items: List[AdminStudentListResponse]
+    total: int
+    page: int
+    page_size: int
+
+
+class AdminStudentDetailField(BaseModel):
+    field_id: uuid.UUID
+    field_name: str
+    field_order: int
+    requires_student_input: bool
+    imported_value: str | None
+    student_response: str | None
+    validation_config: FieldValidationConfig | None
+
+
+class AdminStudentDetailResponse(BaseModel):
+    student_id: uuid.UUID
+    email: str
+    campaign_id: uuid.UUID
+    status: SubmissionStatus
+    submitted_at: datetime | None
+    fields: List[AdminStudentDetailField]

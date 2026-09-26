@@ -168,6 +168,12 @@ def update_responses(
             detail="Campaign not found or not available",
         )
         
+    if membership.campaign.status == CampaignStatus.CLOSED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Campaign is closed and no longer accepts changes",
+        )
+        
     if membership.status == SubmissionStatus.SUBMITTED:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -285,6 +291,12 @@ def submit_campaign(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Campaign not found or not available",
+        )
+        
+    if membership.campaign.status == CampaignStatus.CLOSED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Campaign is closed and no longer accepts changes",
         )
         
     if membership.status == SubmissionStatus.SUBMITTED:

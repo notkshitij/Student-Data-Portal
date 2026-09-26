@@ -318,3 +318,290 @@ def update_campaign_form_config(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail="Failed to update form configuration")
+
+from app.schemas.admin_campaign import (
+    AdminCampaignProgressResponse,
+    AdminStudentListResponse,
+    AdminStudentListPaginatedResponse,
+    AdminStudentDetailResponse,
+    AdminStudentDetailField
+)
+from app.models.campaign_student import CampaignStudent, SubmissionStatus
+from typing import Optional
+
+@router.get("/campaigns/{campaign_id}/progress", response_model=AdminCampaignProgressResponse)
+def get_campaign_progress(
+    campaign_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_current_admin),
+):
+    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    # Efficient counts
+    total_students = db.query(CampaignStudent).filter(CampaignStudent.campaign_id == campaign_id).count()
+    submitted_students = db.query(CampaignStudent).filter(
+        CampaignStudent.campaign_id == campaign_id,
+        CampaignStudent.status == SubmissionStatus.SUBMITTED
+    ).count()
+    
+    pending_students = total_students - submitted_students
+    
+    submission_percentage = (submitted_students / total_students * 100) if total_students > 0 else 0.0
+    
+    return AdminCampaignProgressResponse(
+        campaign_id=campaign.id,
+        campaign_name=campaign.name,
+        campaign_status=campaign.status,
+        total_students=total_students,
+        pending_students=pending_students,
+        submitted_students=submitted_students,
+        submission_percentage=submission_percentage
+    )
+
+
+@router.get("/campaigns/{campaign_id}/students", response_model=AdminStudentListPaginatedResponse)
+def get_campaign_students(
+    campaign_id: uuid.UUID,
+    status: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 50,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_current_admin),
+):
+    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    query = db.query(CampaignStudent).filter(CampaignStudent.campaign_id == campaign_id)
+    
+    if status and status.upper() != "ALL":
+        if status.upper() not in [SubmissionStatus.PENDING, SubmissionStatus.SUBMITTED]:
+            raise HTTPException(status_code=400, detail="Invalid status filter")
+        query = query.filter(CampaignStudent.status == status.upper())
+        
+    total = query.count()
+    
+    # Calculate offset
+    offset = (page - 1) * page_size
+    
+    # Load students efficiently with eager loading for user and submissions
+    from sqlalchemy.orm import joinedload
+    memberships = query.options(
+        joinedload(CampaignStudent.student),
+        joinedload(CampaignStudent.submissions)
+    ).limit(page_size).offset(offset).all()
+    
+    items = []
+    for m in memberships:
+        submitted_at = m.submissions[0].submitted_at if m.submissions else None
+        items.append(AdminStudentListResponse(
+            student_id=m.student.id,
+            email=m.student.email,
+            status=m.status,
+            submitted_at=submitted_at
+        ))
+        
+    return AdminStudentListPaginatedResponse(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size
+    )
+
+
+@router.get("/campaigns/{campaign_id}/students/{student_id}", response_model=AdminStudentDetailResponse)
+def get_campaign_student_detail(
+    campaign_id: uuid.UUID,
+    student_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_current_admin),
+):
+    # Verify enrollment
+    membership = db.query(CampaignStudent).filter(
+        CampaignStudent.campaign_id == campaign_id,
+        CampaignStudent.student_id == student_id
+    ).first()
+    
+    if not membership:
+        raise HTTPException(status_code=404, detail="Student is not enrolled in this campaign")
+        
+    campaign = membership.campaign
+    student = membership.student
+    submitted_at = membership.submissions[0].submitted_at if membership.submissions else None
+    
+    fields_resp = []
+    
+    for field in campaign.fields:
+        # Find the ImportedFieldValue for this field and this student
+        imported_val_record = next(
+            (val for val in membership.imported_field_values if val.campaign_field_id == field.id), 
+            None
+        )
+        
+        if not imported_val_record:
+            continue
+            
+        student_response_val = None
+        if imported_val_record.student_response:
+            student_response_val = imported_val_record.student_response.response_value
+            
+        fields_resp.append(AdminStudentDetailField(
+            field_id=field.id,
+            field_name=field.field_name,
+            field_order=field.field_order,
+            requires_student_input=imported_val_record.requires_student_input,
+            imported_value=imported_val_record.imported_value,
+            student_response=student_response_val,
+            validation_config=field.validation_config
+        ))
+        
+    return AdminStudentDetailResponse(
+        student_id=student.id,
+        email=student.email,
+        campaign_id=campaign.id,
+        status=membership.status,
+        submitted_at=submitted_at,
+        fields=fields_resp
+    )
+
+import csv
+import io
+import re
+from fastapi.responses import StreamingResponse
+
+def _sanitize_csv_value(val: str | None) -> str:
+    """Sanitize CSV value to prevent formula injection."""
+    if val is None:
+        return ""
+    val = str(val)
+    if val and val[0] in ('=', '+', '-', '@', '\t', '\r'):
+        return "'" + val
+    return val
+
+@router.get("/campaigns/{campaign_id}/export")
+def export_campaign_data(
+    campaign_id: uuid.UUID,
+    status: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_current_admin),
+):
+    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    query = db.query(CampaignStudent).filter(CampaignStudent.campaign_id == campaign_id)
+    
+    if status and status.upper() != "ALL":
+        if status.upper() not in [SubmissionStatus.PENDING, SubmissionStatus.SUBMITTED]:
+            raise HTTPException(status_code=400, detail="Invalid status filter")
+        query = query.filter(CampaignStudent.status == status.upper())
+
+    # Create audit log
+    audit = AuditLog(
+        user_id=current_admin.id,
+        action="campaign_export",
+        entity_type="campaign",
+        entity_id=str(campaign.id),
+        details={"status_filter": status or "ALL"}
+    )
+    db.add(audit)
+    db.commit()
+
+    fields = sorted(campaign.fields, key=lambda f: f.field_order)
+    headers = [f.field_name for f in fields] + ["Submission Status", "Submitted At"]
+
+    def iter_csv():
+        output = io.StringIO()
+        writer = csv.writer(output, quoting=csv.QUOTE_MINIMAL)
+        writer.writerow(headers)
+        yield output.getvalue()
+        output.seek(0)
+        output.truncate(0)
+
+        # Batch loading to avoid memory explosion, though typically campaigns are < 10k students
+        # We can just iterate over query
+        # Since we need ImportedFieldValue and StudentResponse, eager loading helps
+        from sqlalchemy.orm import selectinload, joinedload
+        memberships = query.options(
+            joinedload(CampaignStudent.student),
+            selectinload(CampaignStudent.submissions),
+            selectinload(CampaignStudent.imported_field_values).joinedload(ImportedFieldValue.student_response)
+        ).yield_per(100)
+
+        for m in memberships:
+            row = []
+            
+            # Map imported values by field id for fast lookup
+            iv_map = {iv.campaign_field_id: iv for iv in m.imported_field_values}
+
+            for field in fields:
+                iv = iv_map.get(field.id)
+                val = ""
+                if iv:
+                    if not iv.requires_student_input:
+                        val = iv.imported_value
+                    else:
+                        if iv.student_response:
+                            val = iv.student_response.response_value
+                        else:
+                            val = ""
+                row.append(_sanitize_csv_value(val))
+            
+            row.append(_sanitize_csv_value(str(m.status)))
+            submitted_at = m.submissions[0].submitted_at if m.submissions else None
+            row.append(_sanitize_csv_value(submitted_at.isoformat() if submitted_at else ""))
+            
+            writer.writerow(row)
+            yield output.getvalue()
+            output.seek(0)
+            output.truncate(0)
+
+    # Sanitize campaign name for filename
+    safe_name = re.sub(r'[^a-zA-Z0-9_\-]', '_', campaign.name)
+    filename = f"{safe_name}-verified-data.csv"
+
+    return StreamingResponse(
+        iter_csv(),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        }
+    )
+
+@router.post("/campaigns/{campaign_id}/close", response_model=GenericAdminResponse)
+def close_campaign(
+    campaign_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_current_admin),
+):
+    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+        
+    if campaign.status == CampaignStatus.CLOSED:
+        return GenericAdminResponse(message="Campaign is already closed")
+        
+    if campaign.status != CampaignStatus.PUBLISHED:
+        raise HTTPException(status_code=400, detail="Only PUBLISHED campaigns can be closed")
+
+    try:
+        # Update status
+        campaign.status = CampaignStatus.CLOSED
+        
+        # Create audit log
+        audit = AuditLog(
+            user_id=current_admin.id,
+            action="campaign_closed",
+            entity_type="campaign",
+            entity_id=str(campaign.id),
+            details={"status_from": "PUBLISHED", "status_to": "CLOSED"}
+        )
+        db.add(audit)
+        
+        db.commit()
+        return GenericAdminResponse(message="Campaign closed successfully")
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="An error occurred while closing the campaign")

@@ -9,7 +9,7 @@
   justify-content: center;
   gap: 48px;
   padding: 40px 24px;
-  max-width: 720px;
+  max-width: 1400px;
   width: 100%;
   animation: fadeInUp 0.8s var(--transition-slow) both;
 }

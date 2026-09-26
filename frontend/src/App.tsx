@@ -191,8 +191,8 @@ function App() {
                 <StudentDashboard user={user} />
               </div>
             ) : user?.role === "ADMIN" ? (
-              <div style={{ width: "100%", maxWidth: "800px", marginTop: "2rem" }}>
-                <AdminDashboard user={user} />
+              <div style={{ width: "100%", marginTop: "2rem" }}>
+                <AdminDashboard user={user} onLogout={handleLogout} />
               </div>
             ) : (
               <div style={{ padding: "2rem", textAlign: "center", color: "#666" }}>
@@ -200,20 +200,22 @@ function App() {
               </div>
             )}
 
-            <button 
-              onClick={handleLogout}
-              style={{
-                padding: "0.5rem 1rem",
-                fontSize: "0.875rem",
-                borderRadius: "0.375rem",
-                border: "1px solid #ccc",
-                backgroundColor: "#f9f9f9",
-                cursor: "pointer",
-                marginTop: "2rem"
-              }}
-            >
-              Sign Out
-            </button>
+            {user?.role !== "ADMIN" && (
+              <button 
+                onClick={handleLogout}
+                style={{
+                  padding: "0.5rem 1rem",
+                  fontSize: "0.875rem",
+                  borderRadius: "0.375rem",
+                  border: "1px solid #ccc",
+                  backgroundColor: "#f9f9f9",
+                  cursor: "pointer",
+                  marginTop: "2rem"
+                }}
+              >
+                Sign Out
+              </button>
+            )}
           </div>
         ) : (
           <>

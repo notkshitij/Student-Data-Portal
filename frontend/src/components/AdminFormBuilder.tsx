@@ -204,9 +204,9 @@ export const AdminFormBuilder: React.FC<AdminFormBuilderProps> = ({ campaignId, 
         </div>
       )}
 
-      <div style={{ display: "flex", gap: "2rem" }}>
+      <div className="form-builder-grid">
         {/* Builder Column */}
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "1rem" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
           <h4 style={{ marginBottom: "0.5rem", color: "#f1f5f9" }}>Available / Collectable Fields</h4>
           {collectFields.map((field, index) => (
             <div key={field.id} style={{
@@ -420,15 +420,17 @@ export const AdminFormBuilder: React.FC<AdminFormBuilderProps> = ({ campaignId, 
         </div>
 
         {/* Live Preview Column */}
-        <div style={{ flex: 1, position: "sticky", top: "2rem", alignSelf: "flex-start" }}>
-          <h4 style={{ marginBottom: "0.5rem", color: "#111827" }}>Live Preview</h4>
+        <div style={{ position: "sticky", top: "2rem", alignSelf: "flex-start" }}>
+          <h4 style={{ marginBottom: "0.5rem", color: "#f1f5f9" }}>Live Preview</h4>
           <div style={{ 
             border: "1px solid #e5e7eb", 
             borderRadius: "8px", 
             padding: "2rem", 
             backgroundColor: "#ffffff",
             boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
-            color: "#111827"
+            color: "#111827",
+            maxHeight: "calc(100vh - 4rem)",
+            overflowY: "auto"
           }}>
             <h5 style={{ marginBottom: "1.5rem", borderBottom: "1px solid #e5e7eb", paddingBottom: "0.5rem", color: "#111827" }}>Student Form Preview</h5>
             <form onSubmit={e => e.preventDefault()}>

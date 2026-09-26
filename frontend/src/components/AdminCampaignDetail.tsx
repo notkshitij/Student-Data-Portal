@@ -16,6 +16,7 @@ export const AdminCampaignDetail: React.FC<AdminCampaignDetailProps> = ({ campai
   const [isPublishing, setIsPublishing] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [publishMessage, setPublishMessage] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"overview" | "form" | "students">("overview");
 
   const fetchCampaign = async () => {
     try {
@@ -145,20 +146,60 @@ export const AdminCampaignDetail: React.FC<AdminCampaignDetailProps> = ({ campai
     );
   }
 
+  if (loading && !campaign) {
+    return <div className="loading-state">Loading campaign...</div>;
+  }
+
   if (!campaign) {
     return null;
   }
 
   return (
     <div className="campaign-detail">
-      <button className="btn back-btn" onClick={onBack}>
+      <button className="btn back-btn" onClick={onBack} style={{ marginBottom: "2rem" }}>
         &larr; Back to Admin Dashboard
       </button>
       
-      <div className="campaign-header">
-        <h2>{campaign.name}</h2>
-        <div className="campaign-badges">
-          <span className="badge badge-status">{campaign.status}</span>
+      <div className="campaign-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: "2rem" }}>
+        <div>
+          <h2 style={{ margin: "0 0 0.5rem 0" }}>{campaign.name}</h2>
+          <div className="campaign-badges">
+            <span className={`badge badge-${campaign.status.toLowerCase()}`}>{campaign.status}</span>
+          </div>
+        </div>
+        
+        <div style={{ display: "flex", gap: "1rem" }}>
+          {campaign.status === "DRAFT" && (
+            <button 
+              className="btn btn-primary" 
+              onClick={handlePublish}
+              disabled={isPublishing || campaign.student_count === 0 || campaign.field_count === 0}
+            >
+              {isPublishing ? "Publishing..." : "Publish Campaign"}
+            </button>
+          )}
+
+          {campaign.status === "PUBLISHED" && (
+            <button 
+              className="btn btn-danger" 
+              onClick={handleClose}
+              disabled={isClosing}
+              style={{ backgroundColor: "#ef4444", color: "white", borderColor: "#ef4444" }}
+            >
+              {isClosing ? "Closing..." : "Close Campaign"}
+            </button>
+          )}
+
+          {campaign.status === "CLOSED" && (
+            <button 
+              className="btn btn-primary" 
+              onClick={handleReopen}
+              disabled={isPublishing}
+              style={{ backgroundColor: "#4f46e5", color: "white", borderColor: "#4f46e5" }}
+            >
+              {isPublishing ? "Reopening..." : "Reopen Campaign"}
+            </button>
+          )}
         </div>
       </div>
       
@@ -169,74 +210,94 @@ export const AdminCampaignDetail: React.FC<AdminCampaignDetailProps> = ({ campai
       )}
       
       {error && (
-        <div className="error-state">
+        <div className="error-state" style={{ marginBottom: "1rem" }}>
           {error}
         </div>
       )}
 
-      <div className="campaign-form" style={{ marginTop: "2rem" }}>
-        <h3 className="form-title">Campaign Summary</h3>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginTop: "1.5rem" }}>
-          <div>
-            <strong>Enrolled Students:</strong> {campaign.student_count}
-          </div>
-          <div>
-            <strong>Total Dynamic Fields:</strong> {campaign.field_count}
-          </div>
-          <div>
-            <strong>Fields Requiring Input:</strong> {campaign.collect_field_count}
-          </div>
-          <div>
-            <strong>Created:</strong> {new Date(campaign.created_at).toLocaleString()}
-          </div>
-        </div>
-
-        {campaign.status === "DRAFT" && (
-          <div className="form-actions">
-            <button 
-              className="btn btn-primary" 
-              onClick={handlePublish}
-              disabled={isPublishing || campaign.student_count === 0 || campaign.field_count === 0}
-            >
-              {isPublishing ? "Publishing..." : "Publish Campaign"}
-            </button>
-          </div>
-        )}
-
-        {campaign.status === "PUBLISHED" && (
-          <div className="form-actions">
-            <button 
-              className="btn btn-danger" 
-              onClick={handleClose}
-              disabled={isClosing}
-              style={{ backgroundColor: "#ef4444", color: "white", borderColor: "#ef4444" }}
-            >
-              {isClosing ? "Closing..." : "Close Campaign"}
-            </button>
-          </div>
-        )}
-
-        {campaign.status === "CLOSED" && (
-          <div className="form-actions">
-            <button 
-              className="btn btn-primary" 
-              onClick={handleReopen}
-              disabled={isPublishing}
-              style={{ backgroundColor: "#4f46e5", color: "white", borderColor: "#4f46e5" }}
-            >
-              {isPublishing ? "Reopening..." : "Reopen Campaign"}
-            </button>
-          </div>
-        )}
+      {/* Tabs */}
+      <div style={{ display: "flex", gap: "1rem", borderBottom: "1px solid #334155", marginBottom: "2rem" }}>
+        <button 
+          onClick={() => setActiveTab("overview")}
+          style={{ 
+            padding: "0.75rem 1.5rem", 
+            border: "none",
+            borderBottom: activeTab === "overview" ? "2px solid #6366f1" : "2px solid transparent",
+            background: "transparent",
+            color: activeTab === "overview" ? "#f8fafc" : "#94a3b8",
+            fontWeight: activeTab === "overview" ? 600 : 500,
+            cursor: "pointer",
+            fontSize: "1rem",
+            transition: "all 0.2s"
+          }}
+        >
+          Overview
+        </button>
+        <button 
+          onClick={() => setActiveTab("form")}
+          style={{ 
+            padding: "0.75rem 1.5rem", 
+            border: "none",
+            borderBottom: activeTab === "form" ? "2px solid #6366f1" : "2px solid transparent",
+            background: "transparent",
+            color: activeTab === "form" ? "#f8fafc" : "#94a3b8",
+            fontWeight: activeTab === "form" ? 600 : 500,
+            cursor: "pointer",
+            fontSize: "1rem",
+            transition: "all 0.2s"
+          }}
+        >
+          Form Builder
+        </button>
+        <button 
+          onClick={() => setActiveTab("students")}
+          style={{ 
+            padding: "0.75rem 1.5rem", 
+            border: "none",
+            borderBottom: activeTab === "students" ? "2px solid #6366f1" : "2px solid transparent",
+            background: "transparent",
+            color: activeTab === "students" ? "#f8fafc" : "#94a3b8",
+            fontWeight: activeTab === "students" ? 600 : 500,
+            cursor: "pointer",
+            fontSize: "1rem",
+            transition: "all 0.2s"
+          }}
+        >
+          Students & Progress
+        </button>
       </div>
 
-      <AdminFormBuilder 
-        campaignId={campaignId} 
-        disabled={campaign.status === "PUBLISHED"} 
-        campaignStatus={campaign.status}
-      />
+      {activeTab === "overview" && (
+        <div className="campaign-form">
+          <h3 className="form-title">Campaign Summary</h3>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginTop: "1.5rem" }}>
+            <div>
+              <strong style={{ color: "#475569" }}>Enrolled Students:</strong> {campaign.student_count}
+            </div>
+            <div>
+              <strong style={{ color: "#475569" }}>Total Dynamic Fields:</strong> {campaign.field_count}
+            </div>
+            <div>
+              <strong style={{ color: "#475569" }}>Fields Requiring Input:</strong> {campaign.collect_field_count}
+            </div>
+            <div>
+              <strong style={{ color: "#475569" }}>Created:</strong> {new Date(campaign.created_at).toLocaleString()}
+            </div>
+          </div>
+        </div>
+      )}
 
-      <AdminCampaignProgress campaignId={campaignId} />
+      {activeTab === "form" && (
+        <AdminFormBuilder 
+          campaignId={campaignId} 
+          disabled={campaign.status === "PUBLISHED"} 
+          campaignStatus={campaign.status}
+        />
+      )}
+
+      {activeTab === "students" && (
+        <AdminCampaignProgress campaignId={campaignId} />
+      )}
     </div>
   );
 };

@@ -175,7 +175,7 @@ function App() {
       </div>
 
       {/* Authentication */}
-      <div className="auth-section" style={{ marginTop: "2rem", display: "flex", flexDirection: "column", alignItems: "center" }}>
+      <div className="auth-section" style={{ marginTop: "2rem", display: "flex", flexDirection: "column", alignItems: "center", width: "100%" }}>
         {isInitializingAuth ? (
           <div className="auth-loading" style={{ color: "#666" }}>
             Loading authentication state...

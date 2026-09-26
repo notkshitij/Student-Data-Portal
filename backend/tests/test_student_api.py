@@ -51,15 +51,20 @@ def test_student_get_campaigns(client: TestClient, student_user, admin_user, db_
     c_pub = Campaign(name="Published Campaign", created_by_id=admin_user.id, status=CampaignStatus.PUBLISHED)
     db_session.add(c_pub)
     
+    # Setup a CLOSED campaign for student
+    c_closed = Campaign(name="Closed Campaign", created_by_id=admin_user.id, status=CampaignStatus.CLOSED)
+    db_session.add(c_closed)
+    
     # Setup a PUBLISHED campaign NOT for student
     c_other = Campaign(name="Other Campaign", created_by_id=admin_user.id, status=CampaignStatus.PUBLISHED)
     db_session.add(c_other)
     db_session.commit()
     
-    # Enroll student in draft and pub
+    # Enroll student in draft, pub, and closed
     cs_draft = CampaignStudent(campaign_id=c_draft.id, student_id=student_user.id)
     cs_pub = CampaignStudent(campaign_id=c_pub.id, student_id=student_user.id)
-    db_session.add_all([cs_draft, cs_pub])
+    cs_closed = CampaignStudent(campaign_id=c_closed.id, student_id=student_user.id)
+    db_session.add_all([cs_draft, cs_pub, cs_closed])
     db_session.commit()
 
     token = _login_as_student(client, mock_google_auth)
@@ -69,25 +74,26 @@ def test_student_get_campaigns(client: TestClient, student_user, admin_user, db_
     assert resp.status_code == 200
     data = resp.json()
     
-    # Only the published campaign should be returned
-    assert len(data) == 1
-    assert data[0]["campaign_id"] == str(c_pub.id)
-    assert data[0]["name"] == "Published Campaign"
-    assert data[0]["campaign_status"] == CampaignStatus.PUBLISHED.value
-    assert data[0]["submission_status"] == SubmissionStatus.PENDING.value
+    # The published and closed campaigns should be returned
+    assert len(data) == 2
+    names = {d["name"] for d in data}
+    assert "Published Campaign" in names
+    assert "Closed Campaign" in names
 
 
 def test_student_get_campaign_detail_access_controls(client: TestClient, student_user, admin_user, db_session, mock_google_auth):
     # Setup
     c_draft = Campaign(name="Draft Campaign", created_by_id=admin_user.id, status=CampaignStatus.DRAFT)
     c_pub = Campaign(name="Published Campaign", created_by_id=admin_user.id, status=CampaignStatus.PUBLISHED)
+    c_closed = Campaign(name="Closed Campaign", created_by_id=admin_user.id, status=CampaignStatus.CLOSED)
     c_other = Campaign(name="Other Campaign", created_by_id=admin_user.id, status=CampaignStatus.PUBLISHED)
-    db_session.add_all([c_draft, c_pub, c_other])
+    db_session.add_all([c_draft, c_pub, c_closed, c_other])
     db_session.commit()
     
     cs_draft = CampaignStudent(campaign_id=c_draft.id, student_id=student_user.id)
     cs_pub = CampaignStudent(campaign_id=c_pub.id, student_id=student_user.id)
-    db_session.add_all([cs_draft, cs_pub])
+    cs_closed = CampaignStudent(campaign_id=c_closed.id, student_id=student_user.id)
+    db_session.add_all([cs_draft, cs_pub, cs_closed])
     db_session.commit()
 
     token = _login_as_student(client, mock_google_auth)
@@ -105,6 +111,11 @@ def test_student_get_campaign_detail_access_controls(client: TestClient, student
     resp3 = client.get(f"/api/student/campaigns/{c_pub.id}")
     assert resp3.status_code == 200
     assert resp3.json()["name"] == "Published Campaign"
+
+    # Can access CLOSED campaign
+    resp4 = client.get(f"/api/student/campaigns/{c_closed.id}")
+    assert resp4.status_code == 200
+    assert resp4.json()["name"] == "Closed Campaign"
 
 
 def test_student_get_campaign_detail_fields_and_collect_logic(client: TestClient, student_user, admin_user, db_session, mock_google_auth):

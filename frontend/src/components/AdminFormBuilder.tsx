@@ -50,9 +50,8 @@ export const AdminFormBuilder: React.FC<AdminFormBuilderProps> = ({ campaignId, 
     // We preserve the ordering of non-collect fields? The backend doesn't let us update non-collect fields.
     // So we just send the collectFields with their new field_order.
     const updatePayload = {
-      fields: collectFields.map((f, idx) => ({
+      fields: collectFields.map((f) => ({
         id: f.id,
-        field_order: idx, // New sequential order
         validation_config: f.validation_config!
       }))
     };
@@ -434,8 +433,22 @@ export const AdminFormBuilder: React.FC<AdminFormBuilderProps> = ({ campaignId, 
           }}>
             <h5 style={{ marginBottom: "1.5rem", borderBottom: "1px solid #e5e7eb", paddingBottom: "0.5rem", color: "#111827" }}>Student Form Preview</h5>
             <form onSubmit={e => e.preventDefault()}>
-              {collectFields.map(field => {
+              {allFields.map(field => {
                 const config = field.validation_config;
+                
+                if (!field.requires_student_input) {
+                  return (
+                    <div key={`preview-${field.id}`} className="dynamic-field" style={{ marginBottom: "1.5rem" }}>
+                      <label className="field-label" style={{ fontWeight: 600 }}>
+                        {field.field_name}
+                      </label>
+                      <div className="field-readonly-value" style={{ padding: "0.5rem", backgroundColor: "#f3f4f6", borderRadius: "6px", color: "#4b5563" }}>
+                        <span className="empty-value">Existing Value</span>
+                      </div>
+                    </div>
+                  );
+                }
+
                 if (!config) return null;
                 const isRequired = config.rules.required;
                 

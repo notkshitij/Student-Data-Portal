@@ -60,8 +60,9 @@ class AdminFormConfigResponse(BaseModel):
 
 
 class AdminFormFieldUpdate(BaseModel):
-    """Update payload for a single field's validation configuration."""
+    """Update payload for a single field's validation configuration and order."""
     id: uuid.UUID
+    field_order: Optional[int] = None
     validation_config: FieldValidationConfig
 
 

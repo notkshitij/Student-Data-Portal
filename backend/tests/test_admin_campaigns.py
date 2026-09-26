@@ -1,3 +1,6 @@
+from app.models.audit_log import AuditLog
+from app.models.campaign_submission import CampaignSubmission
+from app.models.student_response import StudentResponse
 """
 Tests for Admin Campaign Management API endpoints.
 """
@@ -9,8 +12,6 @@ from app.models.campaign import Campaign, CampaignStatus
 from app.models.campaign_student import CampaignStudent, SubmissionStatus
 from app.models.campaign_field import CampaignField
 from app.models.imported_field_value import ImportedFieldValue
-from app.models.student_response import StudentResponse
-from app.models.audit_log import AuditLog
 from app.models.user import User, UserRole
 
 
@@ -423,7 +424,6 @@ def test_admin_get_campaign_progress_after_submission(client, admin_user, draft_
     ).first()
     cs1.status = SubmissionStatus.SUBMITTED
     
-    from app.models.campaign_submission import CampaignSubmission
     sub = CampaignSubmission(campaign_student_id=cs1.id)
     db_session.add(sub)
     db_session.commit()
@@ -450,7 +450,6 @@ def test_admin_get_campaign_student_detail_submitted(client, admin_user, draft_c
     # Save a response
     cs.status = SubmissionStatus.SUBMITTED
     
-    from app.models.campaign_submission import CampaignSubmission
     sub = CampaignSubmission(campaign_student_id=cs.id)
     db_session.add(sub)
     
@@ -536,7 +535,6 @@ def test_admin_export_campaign_success(client, admin_user, draft_campaign, stude
     db_session.add(resp)
     
     cs.status = SubmissionStatus.SUBMITTED
-    from app.models.campaign_submission import CampaignSubmission
     sub = CampaignSubmission(campaign_student_id=cs.id)
     db_session.add(sub)
     
@@ -577,7 +575,6 @@ def test_admin_export_campaign_pending_and_status_filter(client, admin_user, dra
         CampaignStudent.student_id == student_user.id
     ).first()
     cs1.status = SubmissionStatus.SUBMITTED
-    from app.models.campaign_submission import CampaignSubmission
     sub = CampaignSubmission(campaign_student_id=cs1.id)
     db_session.add(sub)
     db_session.commit()
@@ -644,7 +641,6 @@ def test_admin_export_campaign_csv_parsing_and_isolation(client, admin_user, dra
     db_session.add(resp)
     
     cs1.status = SubmissionStatus.SUBMITTED
-    from app.models.campaign_submission import CampaignSubmission
     sub1 = CampaignSubmission(campaign_student_id=cs1.id)
     db_session.add(sub1)
     
@@ -807,24 +803,237 @@ def test_admin_close_campaign_success(client, admin_user, draft_campaign, mock_g
     assert response2.json()["message"] == "Campaign is already closed"
 
 
-def test_student_cannot_modify_responses_in_closed_campaign(client, draft_campaign, student_user, mock_google_auth, db_session):
-    # Setup SUBMITTED student
-    cs1 = db_session.query(CampaignStudent).filter(
-        CampaignStudent.campaign_id == draft_campaign.id,
-        CampaignStudent.student_id == student_user.id
-    ).first()
-    
-    # We close the campaign
+import threading
+
+
+def test_student_pending_cannot_modify_closed_campaign(client, draft_campaign, student_user, mock_google_auth, db_session):
+    # Setup PENDING student
     draft_campaign.status = CampaignStatus.CLOSED
     db_session.commit()
     
-    # Try to modify responses
     _login_as_student(client, mock_google_auth)
     response = client.put(f"/api/student/campaigns/{draft_campaign.id}/responses", json={"responses": []})
     assert response.status_code == 400
     assert "Campaign is closed and no longer accepts changes" in response.json()["detail"]
     
-    # Try to submit
     response_submit = client.post(f"/api/student/campaigns/{draft_campaign.id}/submit")
     assert response_submit.status_code == 400
     assert "Campaign is closed and no longer accepts changes" in response_submit.json()["detail"]
+
+
+def test_student_submitted_cannot_modify_closed_campaign(client, draft_campaign, student_user, mock_google_auth, db_session):
+    # Setup SUBMITTED student
+    cs1 = draft_campaign.students[0]
+    cs1.status = SubmissionStatus.SUBMITTED
+    sub = CampaignSubmission(campaign_student_id=cs1.id)
+    db_session.add(sub)
+    
+    draft_campaign.status = CampaignStatus.CLOSED
+    db_session.commit()
+    
+    _login_as_student(client, mock_google_auth)
+    response = client.put(f"/api/student/campaigns/{draft_campaign.id}/responses", json={"responses": []})
+    assert response.status_code == 400
+    assert "Campaign is closed and no longer accepts changes" in response.json()["detail"]
+    
+    response_submit = client.post(f"/api/student/campaigns/{draft_campaign.id}/submit")
+    assert response_submit.status_code == 400
+    assert "Campaign is closed and no longer accepts changes" in response_submit.json()["detail"]
+
+
+def test_close_preserves_campaign_data(client, draft_campaign, student_user, mock_google_auth, db_session):
+    cs1 = draft_campaign.students[0]
+    cs1.status = SubmissionStatus.SUBMITTED
+    sub = CampaignSubmission(campaign_student_id=cs1.id)
+    db_session.add(sub)
+    
+    iv = next(v for v in cs1.imported_field_values if v.requires_student_input)
+    resp = StudentResponse(imported_field_value_id=iv.id, response_value="My Value")
+    db_session.add(resp)
+    
+    draft_campaign.status = CampaignStatus.PUBLISHED
+    db_session.commit()
+    
+    _login_as_admin(client, mock_google_auth)
+    client.post(f"/api/admin/campaigns/{draft_campaign.id}/close")
+    
+    db_session.refresh(draft_campaign)
+    assert draft_campaign.status == CampaignStatus.CLOSED
+    
+    db_session.refresh(cs1)
+    assert cs1.status == SubmissionStatus.SUBMITTED
+    assert len(cs1.submissions) == 1
+    
+    db_session.refresh(iv)
+    assert iv.student_response is not None
+    assert iv.student_response.response_value == "My Value"
+
+
+def test_admin_close_campaign_concurrency(client, admin_user, draft_campaign, mock_google_auth, db_session):
+    draft_campaign.status = CampaignStatus.PUBLISHED
+    db_session.commit()
+    
+    _login_as_admin(client, mock_google_auth)
+    
+    results = []
+    
+    def close_req():
+        r = client.post(f"/api/admin/campaigns/{draft_campaign.id}/close")
+        results.append(r)
+        
+    t1 = threading.Thread(target=close_req)
+    t2 = threading.Thread(target=close_req)
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+    
+    success_count = sum(1 for r in results if r.json().get("message") == "Campaign closed successfully")
+    already_closed_count = sum(1 for r in results if r.json().get("message") == "Campaign is already closed")
+    
+    assert success_count == 1
+    assert already_closed_count == 1
+    
+    audits = db_session.query(AuditLog).filter(
+        AuditLog.action == "campaign_closed",
+        AuditLog.entity_id == str(draft_campaign.id)
+    ).all()
+    assert len(audits) == 1
+
+
+def test_student_get_closed_campaign_details(client, draft_campaign, student_user, mock_google_auth, db_session):
+    draft_campaign.status = CampaignStatus.CLOSED
+    db_session.commit()
+    
+    _login_as_student(client, mock_google_auth)
+    response = client.get(f"/api/student/campaigns/{draft_campaign.id}")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["campaign_status"] == "CLOSED"
+    
+    # Verify [COLLECT] isn't exposed as response
+    fields = data["fields"]
+    for f in fields:
+        if f["requires_student_input"]:
+            assert f["value"] != "[COLLECT]"
+
+
+def test_admin_endpoints_on_closed_campaign(client, admin_user, draft_campaign, student_user, mock_google_auth, db_session):
+    draft_campaign.status = CampaignStatus.CLOSED
+    db_session.commit()
+    
+    _login_as_admin(client, mock_google_auth)
+    
+    response = client.get(f"/api/admin/campaigns/{draft_campaign.id}/progress")
+    assert response.status_code == 200
+    
+    response = client.get(f"/api/admin/campaigns/{draft_campaign.id}/students")
+    assert response.status_code == 200
+    
+    response = client.get(f"/api/admin/campaigns/{draft_campaign.id}/export")
+    assert response.status_code == 200
+
+
+def test_campaign_isolation_close(client, admin_user, draft_campaign, student_user, mock_google_auth, db_session):
+    from app.models.campaign import Campaign
+    camp2 = Campaign(name="Campaign 2", status=CampaignStatus.PUBLISHED, created_by_id=admin_user.id)
+    db_session.add(camp2)
+    draft_campaign.status = CampaignStatus.CLOSED
+    db_session.commit()
+    
+    assert draft_campaign.status == CampaignStatus.CLOSED
+    assert camp2.status == CampaignStatus.PUBLISHED
+
+def test_update_form_config_type_change_and_options(client, admin_user, draft_campaign, db_session, mock_google_auth):
+    _login_as_admin(client, mock_google_auth)
+    
+    get_resp = client.get(f"/api/admin/campaigns/{draft_campaign.id}/form")
+    fields = get_resp.json()["fields"]
+    collect_fields = [f for f in fields if f["requires_student_input"]]
+    
+    assert len(collect_fields) >= 1
+    target_field = collect_fields[0]
+    
+    # Change type to select and add options
+    update_payload = {
+        "fields": [
+            {
+                "id": target_field["id"],
+                "field_order": 0,
+                "validation_config": {
+                    "type": "select",
+                    "rules": {
+                        "required": True,
+                        "options": ["Option A", "Option B"]
+                    }
+                }
+            }
+        ]
+    }
+    
+    put_resp = client.put(f"/api/admin/campaigns/{draft_campaign.id}/form", json=update_payload)
+    assert put_resp.status_code == 200
+    
+    # Verify persistence
+    get_resp = client.get(f"/api/admin/campaigns/{draft_campaign.id}/form")
+    updated_field = next(f for f in get_resp.json()["fields"] if f["id"] == target_field["id"])
+    assert updated_field["validation_config"]["type"] == "select"
+    assert updated_field["validation_config"]["rules"]["options"] == ["Option A", "Option B"]
+    assert updated_field["validation_config"]["rules"]["required"] is True
+
+def test_form_config_update_permissions(client, admin_user, draft_campaign, db_session, mock_google_auth):
+    _login_as_admin(client, mock_google_auth)
+    
+    get_resp = client.get(f"/api/admin/campaigns/{draft_campaign.id}/form")
+    target_field = [f for f in get_resp.json()["fields"] if f["requires_student_input"]][0]
+    
+    update_payload = {
+        "fields": [{
+            "id": target_field["id"],
+            "validation_config": {"type": "text", "rules": {"required": True}}
+        }]
+    }
+
+    # 1. DRAFT -> allowed
+    put_resp = client.put(f"/api/admin/campaigns/{draft_campaign.id}/form", json=update_payload)
+    assert put_resp.status_code == 200
+    
+    # 2. PUBLISHED -> rejected
+    client.post(f"/api/admin/campaigns/{draft_campaign.id}/publish")
+    put_resp = client.put(f"/api/admin/campaigns/{draft_campaign.id}/form", json=update_payload)
+    assert put_resp.status_code == 400
+    
+    # 3. CLOSED -> allowed
+    client.post(f"/api/admin/campaigns/{draft_campaign.id}/close")
+    put_resp = client.put(f"/api/admin/campaigns/{draft_campaign.id}/form", json=update_payload)
+    assert put_resp.status_code == 200
+
+def test_reopen_campaign_permissions(client, admin_user, draft_campaign, db_session, mock_google_auth):
+    _login_as_admin(client, mock_google_auth)
+
+    # DRAFT -> rejected
+    resp = client.post(f"/api/admin/campaigns/{draft_campaign.id}/reopen")
+    assert resp.status_code == 400
+
+    # PUBLISHED -> rejected
+    client.post(f"/api/admin/campaigns/{draft_campaign.id}/publish")
+    resp = client.post(f"/api/admin/campaigns/{draft_campaign.id}/reopen")
+    assert resp.status_code == 400
+    
+    # CLOSED -> allowed
+    client.post(f"/api/admin/campaigns/{draft_campaign.id}/close")
+    resp = client.post(f"/api/admin/campaigns/{draft_campaign.id}/reopen")
+    assert resp.status_code == 200
+    
+    # Verify status is PUBLISHED
+    from app.models.campaign import Campaign
+    camp = db_session.query(Campaign).filter(Campaign.id == draft_campaign.id).first()
+    assert camp.status == "PUBLISHED" or getattr(camp.status, "value", camp.status) == "PUBLISHED"
+    
+    # Verify Audit log
+    from app.models.audit_log import AuditLog
+    audit = db_session.query(AuditLog).filter(
+        AuditLog.action == "campaign_reopened",
+        AuditLog.entity_id == str(camp.id)
+    ).first()
+    assert audit is not None

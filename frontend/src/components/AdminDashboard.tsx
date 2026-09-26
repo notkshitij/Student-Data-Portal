@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { config } from "../config";
 import type { AdminCampaignListResponse } from "../types/admin";
 import { AdminCampaignDetail } from "./AdminCampaignDetail";
+import { AdminAuditLogs } from "./AdminAuditLogs";
 
 interface AdminDashboardProps {
   user: any;
@@ -13,6 +14,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
   const [error, setError] = useState<string | null>(null);
   
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
+  const [showAuditLogs, setShowAuditLogs] = useState(false);
 
   const fetchCampaigns = async () => {
     try {
@@ -50,11 +52,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
     );
   }
 
+  if (showAuditLogs) {
+    return <AdminAuditLogs onBack={() => setShowAuditLogs(false)} />;
+  }
+
   return (
     <div className="student-dashboard">
-      <div className="dashboard-header">
-        <h2>Admin Dashboard ({user?.email})</h2>
-        <p>Manage data verification campaigns.</p>
+      <div className="dashboard-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <h2>Admin Dashboard ({user?.email})</h2>
+          <p>Manage data verification campaigns.</p>
+        </div>
+        <button className="btn btn-secondary" onClick={() => setShowAuditLogs(true)}>
+          View Audit Logs
+        </button>
       </div>
 
       {loading ? (

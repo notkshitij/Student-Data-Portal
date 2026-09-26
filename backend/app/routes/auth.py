@@ -104,6 +104,7 @@ def logout(
         key=auth.SESSION_COOKIE_NAME,
         httponly=True,
         samesite="lax",
+        secure=request.url.scheme == "https",
     )
     
     return GenericResponse(message="Successfully logged out")

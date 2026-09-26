@@ -122,3 +122,22 @@ export interface AdminStudentDetailResponse {
   submitted_at: string | null;
   fields: AdminStudentDetailField[];
 }
+
+export interface AuditLogResponse {
+  id: string;
+  user_id: string | null;
+  user_email: string | null;
+  action: string;
+  entity_type: string;
+  entity_id: string;
+  details: Record<string, any> | null;
+  created_at: string;
+}
+
+export interface AuditLogPaginatedResponse {
+  items: AuditLogResponse[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}

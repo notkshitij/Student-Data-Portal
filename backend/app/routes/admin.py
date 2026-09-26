@@ -264,11 +264,11 @@ def update_campaign_form_config(
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
         
-    # Only allow edits in DRAFT state
-    if campaign.status != CampaignStatus.DRAFT:
+    # Only allow edits in DRAFT or CLOSED state
+    if campaign.status not in {CampaignStatus.DRAFT, CampaignStatus.CLOSED}:
         raise HTTPException(
             status_code=400,
-            detail="Form configuration can only be modified for DRAFT campaigns"
+            detail="Form configuration can only be modified for DRAFT or CLOSED campaigns"
         )
         
     # Fetch all fields for this campaign
@@ -298,6 +298,8 @@ def update_campaign_form_config(
                 field = fields[field_id]
                 # Pydantic has already validated and normalized update_field.validation_config
                 field.validation_config = update_field.validation_config.model_dump()
+                if update_field.field_order is not None and field.field_order != update_field.field_order:
+                    field.field_order = update_field.field_order
                 updates_made += 1
                 
         # Create audit log
@@ -576,7 +578,7 @@ def close_campaign(
     db: Session = Depends(get_db),
     current_admin: User = Depends(get_current_admin),
 ):
-    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).with_for_update().first()
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
         
@@ -605,3 +607,139 @@ def close_campaign(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail="An error occurred while closing the campaign")
+
+
+@router.post("/campaigns/{campaign_id}/reopen", response_model=GenericAdminResponse)
+def reopen_campaign(
+    campaign_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_current_admin),
+):
+    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).with_for_update().first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+        
+    if campaign.status == CampaignStatus.PUBLISHED:
+        raise HTTPException(status_code=400, detail="Campaign is already published")
+        
+    if campaign.status == CampaignStatus.DRAFT:
+        raise HTTPException(status_code=400, detail="DRAFT campaigns cannot be reopened. Publish them instead.")
+
+    try:
+        # Update status
+        campaign.status = CampaignStatus.PUBLISHED
+        
+        # Create audit log
+        audit = AuditLog(
+            user_id=current_admin.id,
+            action="campaign_reopened",
+            entity_type="campaign",
+            entity_id=str(campaign.id),
+            details={"status_from": "CLOSED", "status_to": "PUBLISHED"}
+        )
+        db.add(audit)
+        
+        db.commit()
+        return GenericAdminResponse(message="Campaign reopened successfully")
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="An error occurred while reopening the campaign")
+
+from datetime import datetime
+from typing import Optional, List
+from sqlalchemy import desc
+from app.models.audit_log import AuditLog
+from app.schemas.admin_audit import AuditLogPaginatedResponse, AuditLogResponse
+
+@router.get("/audit-logs", response_model=AuditLogPaginatedResponse)
+def get_audit_logs(
+    page: int = 1,
+    page_size: int = 50,
+    action: Optional[str] = None,
+    entity_type: Optional[str] = None,
+    user_id: Optional[uuid.UUID] = None,
+    campaign_id: Optional[uuid.UUID] = None,
+    from_date: Optional[datetime] = None,
+    to_date: Optional[datetime] = None,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_current_admin),
+):
+    """
+    Get audit logs with optional filtering and pagination.
+    Admin-only access.
+    """
+    if page < 1:
+        raise HTTPException(status_code=400, detail="Page must be >= 1")
+    if page_size < 1 or page_size > 100:
+        raise HTTPException(status_code=400, detail="Page size must be between 1 and 100")
+
+    query = db.query(AuditLog)
+
+    if action:
+        query = query.filter(AuditLog.action == action)
+    
+    if entity_type:
+        query = query.filter(AuditLog.entity_type == entity_type)
+        
+    if user_id:
+        query = query.filter(AuditLog.user_id == user_id)
+        
+    if campaign_id:
+        query = query.filter(
+            AuditLog.entity_type == "campaign",
+            AuditLog.entity_id == str(campaign_id)
+        )
+        
+    if from_date:
+        query = query.filter(AuditLog.created_at >= from_date)
+        
+    if to_date:
+        query = query.filter(AuditLog.created_at <= to_date)
+        
+    total = query.count()
+    
+    query = query.order_by(AuditLog.created_at.desc())
+    query = query.offset((page - 1) * page_size).limit(page_size)
+    
+    logs = query.all()
+    
+    # We need to map user_email if available
+    # Avoid N+1 by collecting user ids and fetching them
+    user_ids = {log.user_id for log in logs if log.user_id}
+    users = {u.id: u.email for u in db.query(User).filter(User.id.in_(user_ids)).all()} if user_ids else {}
+    
+    items = []
+    for log in logs:
+        # Sanitize details if necessary. Currently no sensitive data is known to be in details,
+        # but we should ensure no session tokens or passwords are in details.
+        sanitized_details = log.details.copy() if log.details else None
+        
+        # In case some existing action contains sensitive keys, we filter them out
+        if sanitized_details:
+            sensitive_keys = ["password", "token", "secret", "google_subject_id", "session"]
+            for k in sensitive_keys:
+                if k in sanitized_details:
+                    del sanitized_details[k]
+
+        items.append(
+            AuditLogResponse(
+                id=log.id,
+                user_id=log.user_id,
+                user_email=users.get(log.user_id),
+                action=log.action,
+                entity_type=log.entity_type,
+                entity_id=log.entity_id,
+                details=sanitized_details,
+                created_at=log.created_at
+            )
+        )
+        
+    total_pages = (total + page_size - 1) // page_size
+
+    return AuditLogPaginatedResponse(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=total_pages
+    )

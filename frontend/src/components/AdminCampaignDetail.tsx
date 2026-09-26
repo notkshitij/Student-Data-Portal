@@ -101,6 +101,37 @@ export const AdminCampaignDetail: React.FC<AdminCampaignDetailProps> = ({ campai
     }
   };
 
+  const handleReopen = async () => {
+    if (!window.confirm("Reopen Campaign?\n\nThis will change the campaign from CLOSED to PUBLISHED.\n\nThe updated form configuration will become active for eligible students.\nStudents who have already submitted will remain locked.")) {
+      return;
+    }
+    
+    setIsPublishing(true); // Reusing publishing state for loading
+    setPublishMessage(null);
+    setError(null);
+    
+    try {
+      const response = await fetch(`${config.apiBaseUrl}/api/admin/campaigns/${campaignId}/reopen`, {
+        method: "POST",
+        credentials: "include",
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.detail || "Failed to reopen campaign.");
+      }
+      
+      setPublishMessage(data.message || "Campaign reopened successfully!");
+      // Refresh campaign to get updated status
+      await fetchCampaign();
+    } catch (err: any) {
+      setError(err.message || "An unexpected error occurred during reopening.");
+    } finally {
+      setIsPublishing(false);
+    }
+  };
+
   if (loading && !campaign) {
     return <div className="loading-state">Loading campaign...</div>;
   }
@@ -184,11 +215,25 @@ export const AdminCampaignDetail: React.FC<AdminCampaignDetailProps> = ({ campai
             </button>
           </div>
         )}
+
+        {campaign.status === "CLOSED" && (
+          <div className="form-actions">
+            <button 
+              className="btn btn-primary" 
+              onClick={handleReopen}
+              disabled={isPublishing}
+              style={{ backgroundColor: "#4f46e5", color: "white", borderColor: "#4f46e5" }}
+            >
+              {isPublishing ? "Reopening..." : "Reopen Campaign"}
+            </button>
+          </div>
+        )}
       </div>
 
       <AdminFormBuilder 
         campaignId={campaignId} 
-        disabled={campaign.status !== "DRAFT"} 
+        disabled={campaign.status === "PUBLISHED"} 
+        campaignStatus={campaign.status}
       />
 
       <AdminCampaignProgress campaignId={campaignId} />

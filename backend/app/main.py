@@ -14,10 +14,25 @@ app = FastAPI(
     title="Student Data Verification Portal",
     description="Backend API for the Student Data Verification Portal",
     version="0.1.0",
+    docs_url="/docs" if settings.enable_api_docs else None,
+    redoc_url="/redoc" if settings.enable_api_docs else None,
+    openapi_url="/openapi.json" if settings.enable_api_docs else None,
 )
 
-# CORS configuration for local development.
-# In production, replace with the actual frontend origin.
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from app.middleware import SecurityHeadersMiddleware
+
+# Security headers middleware
+app.add_middleware(SecurityHeadersMiddleware)
+
+# Trusted Host (if configured)
+if "*" not in settings.allowed_hosts:
+    app.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=settings.allowed_hosts,
+    )
+
+# CORS configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,

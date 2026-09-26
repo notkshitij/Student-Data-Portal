@@ -38,6 +38,11 @@ class Settings:
     google_client_secret: str = field(default_factory=lambda: os.getenv("GOOGLE_CLIENT_SECRET", ""))
     google_redirect_uri: str = field(default_factory=lambda: os.getenv("GOOGLE_REDIRECT_URI", "postmessage"))
     admin_email: str = field(default_factory=lambda: os.getenv("ADMIN_EMAIL", "piyushagarwalnew@gmail.com"))
+    
+    # Environment and security settings
+    environment: str = field(default_factory=lambda: os.getenv("ENVIRONMENT", "development"))
+    enable_api_docs: bool = field(default_factory=lambda: os.getenv("ENABLE_API_DOCS", "true").lower() == "true")
+    allowed_hosts: list[str] = field(default_factory=lambda: [h.strip() for h in os.getenv("ALLOWED_HOSTS", "*").split(",") if h.strip()])
 
 
 settings = Settings()

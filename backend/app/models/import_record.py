@@ -47,6 +47,9 @@ class Import(Base):
     original_filename: Mapped[str] = mapped_column(
         String(512), nullable=False,
     )
+    stored_filename: Mapped[str | None] = mapped_column(
+        String(255), nullable=True,
+    )
     row_count: Mapped[int | None] = mapped_column(
         Integer, nullable=True,
     )

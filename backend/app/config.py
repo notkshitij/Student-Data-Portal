@@ -43,6 +43,7 @@ class Settings:
     environment: str = field(default_factory=lambda: os.getenv("ENVIRONMENT", "development"))
     enable_api_docs: bool = field(default_factory=lambda: os.getenv("ENABLE_API_DOCS", "true").lower() == "true")
     allowed_hosts: list[str] = field(default_factory=lambda: [h.strip() for h in os.getenv("ALLOWED_HOSTS", "*").split(",") if h.strip()])
-
+    upload_dir: Path = field(default_factory=lambda: Path(os.getenv("UPLOAD_DIR", str(Path(__file__).resolve().parent.parent / "data" / "uploads"))))
 
 settings = Settings()
+settings.upload_dir.mkdir(parents=True, exist_ok=True)

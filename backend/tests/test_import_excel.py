@@ -68,10 +68,20 @@ def _login_as_admin(client, mock_google_auth):
 
 
 def _post_import(client, token, rows, campaign_name="Test Campaign"):
+    # Create campaign
+    create_resp = client.post(
+        "/api/admin/campaigns",
+        json={"name": campaign_name},
+        cookies={auth.SESSION_COOKIE_NAME: token},
+    )
+    if create_resp.status_code != 200:
+        return create_resp
+        
+    campaign_id = create_resp.json()["campaign_id"]
+
     file_bytes = create_excel_bytes(rows)
     return client.post(
-        "/api/admin/import",
-        data={"campaign_name": campaign_name},
+        f"/api/admin/campaigns/{campaign_id}/import",
         files={
             "file": (
                 "test.xlsx",
@@ -814,8 +824,7 @@ class TestAuthorization:
         file_bytes = create_excel_bytes(rows)
 
         response = client.post(
-            "/api/admin/import",
-            data={"campaign_name": "Nope"},
+            \"/api/admin/campaigns/00000000-0000-0000-0000-000000000000/import\",
             files={"file": ("test.xlsx", file_bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
             cookies={auth.SESSION_COOKIE_NAME: token},
         )
@@ -826,8 +835,7 @@ class TestAuthorization:
         file_bytes = create_excel_bytes(rows)
 
         response = client.post(
-            "/api/admin/import",
-            data={"campaign_name": "Nope"},
+            \"/api/admin/campaigns/00000000-0000-0000-0000-000000000000/import\",
             files={"file": ("test.xlsx", file_bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
         )
         assert response.status_code == 401
@@ -845,8 +853,7 @@ class TestRollback:
         token = _login_as_admin(client, mock_google_auth)
 
         response = client.post(
-            "/api/admin/import",
-            data={"campaign_name": "Fail Campaign"},
+            \"/api/admin/campaigns/00000000-0000-0000-0000-000000000000/import\",
             files={
                 "file": (
                     "bad.xlsx",
@@ -887,8 +894,7 @@ class TestRollback:
         token = _login_as_admin(client, mock_google_auth)
 
         response = client.post(
-            "/api/admin/import",
-            data={"campaign_name": "Wrong Ext"},
+            \"/api/admin/campaigns/00000000-0000-0000-0000-000000000000/import\",
             files={"file": ("data.csv", b"a,b,c", "text/csv")},
             cookies={auth.SESSION_COOKIE_NAME: token},
         )
@@ -907,8 +913,7 @@ class TestRollback:
         file_bytes = buf.getvalue()
 
         response = client.post(
-            "/api/admin/import",
-            data={"campaign_name": "Empty"},
+            \"/api/admin/campaigns/00000000-0000-0000-0000-000000000000/import\",
             files={"file": ("empty.xlsx", file_bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
             cookies={auth.SESSION_COOKIE_NAME: token},
         )

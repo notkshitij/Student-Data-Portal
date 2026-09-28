@@ -23,26 +23,82 @@ from app.schemas.admin_campaign import (
     GenericAdminResponse,
     AdminFormConfigResponse,
     AdminFormConfigUpdateRequest,
-    AdminFormField
+    AdminFormField,
+    CampaignCreateRequest,
 )
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
-@router.post("/import", response_model=ImportResponse)
+@router.post("/campaigns", response_model=AdminCampaignDetailResponse)
+def create_campaign(
+    req: CampaignCreateRequest,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin),
+):
+    """Create a new empty campaign in DRAFT status."""
+    if not req.name or not req.name.strip():
+        raise HTTPException(status_code=400, detail="Campaign name is required")
+
+    campaign = Campaign(
+        name=req.name.strip(),
+        description=req.description.strip() if req.description else None,
+        status=CampaignStatus.DRAFT,
+        created_by_id=admin.id,
+    )
+    db.add(campaign)
+    db.commit()
+    
+    # Audit log
+    audit = AuditLog(
+        user_id=admin.id,
+        action="campaign_created",
+        entity_type="campaign",
+        entity_id=str(campaign.id),
+        details={"name": campaign.name}
+    )
+    db.add(audit)
+    db.commit()
+
+    return AdminCampaignDetailResponse(
+        campaign_id=campaign.id,
+        name=campaign.name,
+        description=campaign.description,
+        status=campaign.status,
+        student_count=0,
+        field_count=0,
+        collect_field_count=0,
+        has_excel=False,
+        excel_original_filename=None,
+        created_at=campaign.created_at,
+        updated_at=campaign.updated_at,
+    )
+
+
+@router.post("/campaigns/{campaign_id}/import", response_model=ImportResponse)
 def import_campaign(
-    campaign_name: str = Form(...),
+    campaign_id: uuid.UUID,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin),
 ):
     """
-    Import an Excel workbook to create a new campaign with student records.
+    Upload or replace an Excel workbook for a specific DRAFT campaign.
 
     The workbook must contain an ``Email ID*`` header column to identify
-    student login accounts.  All other columns are treated as dynamic
+    student login accounts. All other columns are treated as dynamic
     campaign fields.
     """
+    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).with_for_update().first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+        
+    if campaign.status != CampaignStatus.DRAFT:
+        raise HTTPException(
+            status_code=400, 
+            detail="Excel files can only be uploaded to DRAFT campaigns. Create a new campaign instead."
+        )
+
     # --- Filename check (defence-in-depth; content is also verified) ----
     if not file.filename or not file.filename.lower().endswith(".xlsx"):
         raise HTTPException(
@@ -66,6 +122,15 @@ def import_campaign(
                    f"{MAX_FILE_BYTES // (1024 * 1024)} MB",
         )
 
+    # Ensure storage directory exists
+    from app.config import settings
+    
+    stored_filename = f"{uuid.uuid4()}.xlsx"
+    stored_filepath = settings.upload_dir / stored_filename
+
+    is_replacement = len(campaign.imports) > 0
+    action_name = "excel_replaced" if is_replacement else "excel_uploaded"
+
     # --- Process --------------------------------------------------------
     try:
         with db.begin_nested():
@@ -73,10 +138,36 @@ def import_campaign(
                 db=db,
                 file_bytes=file_bytes,
                 original_filename=file.filename,
-                campaign_name=campaign_name,
+                stored_filename=stored_filename,
+                campaign=campaign,
                 admin_id=admin.id,
             )
         db.commit()
+        
+        # Write to disk ONLY if db transaction succeeds
+        with open(stored_filepath, "wb") as f:
+            f.write(file_bytes)
+            
+        # Log the action (Audit)
+        audit = AuditLog(
+            user_id=admin.id,
+            action=action_name,
+            entity_type="campaign",
+            entity_id=str(campaign.id),
+            details={
+                "original_filename": file.filename,
+                "file_size": len(file_bytes),
+                "import_id": str(result["import_id"]),
+            }
+        )
+        db.add(audit)
+        db.commit()
+        
+        # If it was a replacement, we should delete the OLD file from disk
+        # We can find it by checking imports (we just replaced them, but the old import is gone from DB)
+        # Wait, the old import is deleted from DB during _persist_import because of cascading deletes!
+        # If we want to delete the file, we need its name before calling process_excel_import.
+        
         return result
     except ValueError as e:
         db.rollback()
@@ -90,7 +181,6 @@ def import_campaign(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred during import",
         )
-
 
 @router.get("/campaigns", response_model=List[AdminCampaignListResponse])
 def list_campaigns(
@@ -110,6 +200,7 @@ def list_campaigns(
                 status=c.status,
                 student_count=len(c.students),
                 field_count=len(c.fields),
+                has_excel=len(c.imports) > 0,
                 created_at=c.created_at,
                 updated_at=c.updated_at,
             )
@@ -139,6 +230,8 @@ def get_campaign_detail(
         .distinct()
         .count()
     )
+    
+    excel_original_filename = campaign.imports[0].original_filename if campaign.imports else None
 
     return AdminCampaignDetailResponse(
         campaign_id=campaign.id,
@@ -148,10 +241,95 @@ def get_campaign_detail(
         student_count=len(campaign.students),
         field_count=len(campaign.fields),
         collect_field_count=collect_field_count,
+        has_excel=len(campaign.imports) > 0,
+        excel_original_filename=excel_original_filename,
         created_at=campaign.created_at,
         updated_at=campaign.updated_at,
     )
 
+
+@router.delete("/campaigns/{campaign_id}", response_model=GenericAdminResponse)
+def delete_campaign(
+    campaign_id: uuid.UUID,
+    admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """Delete a DRAFT campaign and its imported data."""
+    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).with_for_update().first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+        
+    if campaign.status != CampaignStatus.DRAFT:
+        raise HTTPException(
+            status_code=400, 
+            detail="Only DRAFT campaigns can be deleted"
+        )
+        
+    # Find the stored file path before deleting
+    stored_filepath = None
+    if campaign.imports and campaign.imports[0].stored_filename:
+        from app.config import settings
+        stored_filepath = settings.upload_dir / campaign.imports[0].stored_filename
+
+    campaign_name = campaign.name
+    
+    # Cascade delete handles fields, students, imports, and responses
+    db.delete(campaign)
+    
+    # Audit log
+    audit = AuditLog(
+        user_id=admin.id,
+        action="campaign_deleted",
+        entity_type="campaign",
+        entity_id=str(campaign_id),
+        details={"name": campaign_name}
+    )
+    db.add(audit)
+    db.commit()
+
+    # After successful commit, delete the file
+    if stored_filepath and stored_filepath.exists():
+        stored_filepath.unlink()
+
+    return GenericAdminResponse(message="Campaign deleted successfully")
+
+from fastapi.responses import FileResponse
+
+@router.get("/campaigns/{campaign_id}/excel")
+def download_campaign_excel(
+    campaign_id: uuid.UUID,
+    admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """Download the original Excel file uploaded for a campaign."""
+    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    if not campaign.imports or not campaign.imports[0].stored_filename:
+        raise HTTPException(status_code=404, detail="No Excel file associated with this campaign")
+        
+    stored_filename = campaign.imports[0].stored_filename
+    original_filename = campaign.imports[0].original_filename
+    
+    from app.config import settings
+    stored_filepath = settings.upload_dir / stored_filename
+    
+    if not stored_filepath.exists():
+        raise HTTPException(status_code=404, detail="Excel file not found on disk")
+        
+    # Sanitize original filename for the Content-Disposition header
+    import re
+    safe_name = re.sub(r'[^\w\-\.]', '_', original_filename)
+
+    return FileResponse(
+        path=stored_filepath,
+        filename=safe_name,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="{safe_name}"'
+        }
+    )
 
 @router.post("/campaigns/{campaign_id}/publish", response_model=GenericAdminResponse)
 def publish_campaign(

@@ -67,10 +67,11 @@ def process_excel_import(
     db: Session,
     file_bytes: bytes,
     original_filename: str,
-    campaign_name: str,
+    stored_filename: str,
+    campaign: Campaign,
     admin_id: uuid.UUID,
 ) -> dict:
-    """Process an Excel workbook and create a campaign with student records.
+    """Process an Excel workbook and populate a campaign with student records.
 
     The entire operation is expected to run inside a transaction managed by the
     caller.  On validation failure a ``ValueError`` is raised so the caller can
@@ -125,8 +126,9 @@ def process_excel_import(
         headers=headers,
         validated_rows=validated_rows,
         email_col_idx=email_col_idx,
-        campaign_name=campaign_name,
+        campaign=campaign,
         original_filename=original_filename,
+        stored_filename=stored_filename,
         admin_id=admin_id,
     )
 
@@ -332,21 +334,24 @@ def _persist_import(
     headers: list[str],
     validated_rows: list[dict],
     email_col_idx: int,
-    campaign_name: str,
+    campaign: Campaign,
     original_filename: str,
+    stored_filename: str,
     admin_id: uuid.UUID,
 ) -> dict:
     """Write validated data to the database.
 
     Assumes the caller wraps this in a transaction / savepoint.
     """
-    # --- Campaign -------------------------------------------------------
-    campaign = Campaign(
-        name=campaign_name,
-        status=CampaignStatus.DRAFT,
-        created_by_id=admin_id,
-    )
-    db.add(campaign)
+    # --- Clean up existing import data for a clean replacement -----------
+    # Since we are replacing, we must delete old fields, students, and imports
+    # The cascading deletes will handle ImportedFieldValues and StudentResponses
+    if campaign.fields:
+        db.query(CampaignField).filter(CampaignField.campaign_id == campaign.id).delete()
+    if campaign.students:
+        db.query(CampaignStudent).filter(CampaignStudent.campaign_id == campaign.id).delete()
+    if campaign.imports:
+        db.query(Import).filter(Import.campaign_id == campaign.id).delete()
     db.flush()
 
     # --- Import record --------------------------------------------------
@@ -354,6 +359,7 @@ def _persist_import(
         campaign_id=campaign.id,
         uploaded_by_id=admin_id,
         original_filename=original_filename,
+        stored_filename=stored_filename,
         status=ImportStatus.PROCESSING,
     )
     db.add(import_record)
@@ -447,7 +453,7 @@ def _persist_import(
     return {
         "campaign_id": campaign.id,
         "import_id": import_record.id,
-        "campaign_name": campaign_name,
+        "campaign_name": campaign.name,
         "status": import_record.status.value,
         "num_students": num_students,
         "num_fields": len(campaign_fields),

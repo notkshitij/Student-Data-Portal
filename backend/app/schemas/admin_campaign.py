@@ -5,6 +5,10 @@ from pydantic import BaseModel, ConfigDict
 from app.models.campaign import CampaignStatus
 
 
+class CampaignCreateRequest(BaseModel):
+    name: str
+    description: str | None = None
+
 class AdminCampaignListResponse(BaseModel):
     """List view of a campaign for admins."""
     model_config = ConfigDict(from_attributes=True)
@@ -14,6 +18,7 @@ class AdminCampaignListResponse(BaseModel):
     status: CampaignStatus
     student_count: int
     field_count: int
+    has_excel: bool
     created_at: datetime
     updated_at: datetime
 
@@ -29,6 +34,8 @@ class AdminCampaignDetailResponse(BaseModel):
     student_count: int
     field_count: int
     collect_field_count: int
+    has_excel: bool
+    excel_original_filename: str | None
     created_at: datetime
     updated_at: datetime
 

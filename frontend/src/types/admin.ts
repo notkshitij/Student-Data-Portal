@@ -6,6 +6,7 @@ export interface AdminCampaignListResponse {
   status: CampaignStatus;
   student_count: number;
   field_count: number;
+  has_excel: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -18,6 +19,8 @@ export interface AdminCampaignDetailResponse {
   student_count: number;
   field_count: number;
   collect_field_count: number;
+  has_excel: boolean;
+  excel_original_filename: string | null;
   created_at: string;
   updated_at: string;
 }

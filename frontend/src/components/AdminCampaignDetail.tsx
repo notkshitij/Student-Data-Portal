@@ -144,6 +144,73 @@ export const AdminCampaignDetail: React.FC<AdminCampaignDetailProps> = ({ campai
     }
   };
 
+  const [uploadingExcel, setUploadingExcel] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  const handleUploadExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingExcel(true);
+    setUploadError(null);
+    setPublishMessage(null);
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const response = await fetch(`${config.apiBaseUrl}/api/admin/campaigns/${campaignId}/import`, {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || "Failed to upload Excel.");
+      }
+
+      setPublishMessage("Excel file uploaded/replaced successfully.");
+      await fetchCampaign();
+    } catch (err: any) {
+      setUploadError(err.message || "An unexpected error occurred.");
+    } finally {
+      setUploadingExcel(false);
+      e.target.value = ''; // Reset input
+    }
+  };
+
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDeleteCampaign = async () => {
+    if (campaign?.status !== "DRAFT") return;
+
+    if (!window.confirm("This will permanently delete this draft campaign and its imported data. This action cannot be undone.")) {
+      return;
+    }
+
+    setIsDeleting(true);
+    setUploadError(null);
+    setError(null);
+
+    try {
+      const response = await fetch(`${config.apiBaseUrl}/api/admin/campaigns/${campaignId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.detail || "Failed to delete campaign.");
+      }
+
+      onBack(); // Go back to dashboard on success
+    } catch (err: any) {
+      setError(err.message || "Failed to delete campaign.");
+      setIsDeleting(false);
+    }
+  };
+
   if (loading && !campaign) {
     return <div className="loading-state">Loading campaign...</div>;
   }
@@ -295,6 +362,84 @@ export const AdminCampaignDetail: React.FC<AdminCampaignDetailProps> = ({ campai
               <strong style={{ color: "#475569" }}>Created:</strong> {new Date(campaign.created_at).toLocaleString()}
             </div>
           </div>
+          
+          <h3 className="form-title" style={{ marginTop: "2rem" }}>Source Excel</h3>
+          
+          {uploadError && (
+            <div className="error-message" style={{ marginBottom: "1rem" }}>{uploadError}</div>
+          )}
+
+          <div style={{ padding: "1.5rem", backgroundColor: "#1e293b", borderRadius: "8px", border: "1px solid #334155", display: "flex", flexDirection: "column", gap: "1rem" }}>
+            {campaign.has_excel ? (
+              <>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div>
+                    <strong style={{ color: "#f8fafc" }}>{campaign.excel_original_filename}</strong>
+                    <div style={{ color: "#94a3b8", fontSize: "0.875rem", marginTop: "0.25rem" }}>
+                      Uploaded successfully
+                    </div>
+                  </div>
+                  
+                  <div style={{ display: "flex", gap: "0.5rem" }}>
+                    <a 
+                      href={`${config.apiBaseUrl}/api/admin/campaigns/${campaign.campaign_id}/excel`}
+                      download
+                      className="btn btn-secondary"
+                      style={{ textDecoration: "none" }}
+                    >
+                      Download Excel
+                    </a>
+                    
+                    {campaign.status === "DRAFT" && (
+                      <label className="btn btn-primary" style={{ cursor: "pointer", margin: 0, opacity: uploadingExcel ? 0.7 : 1 }}>
+                        {uploadingExcel ? "Uploading..." : "Replace Excel"}
+                        <input 
+                          type="file" 
+                          accept=".xlsx" 
+                          style={{ display: "none" }} 
+                          onChange={handleUploadExcel}
+                          disabled={uploadingExcel}
+                        />
+                      </label>
+                    )}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span style={{ color: "#94a3b8" }}>No Excel file uploaded yet.</span>
+                {campaign.status === "DRAFT" && (
+                  <label className="btn btn-primary" style={{ cursor: "pointer", margin: 0, opacity: uploadingExcel ? 0.7 : 1 }}>
+                    {uploadingExcel ? "Uploading..." : "Upload Excel"}
+                    <input 
+                      type="file" 
+                      accept=".xlsx" 
+                      style={{ display: "none" }} 
+                      onChange={handleUploadExcel}
+                      disabled={uploadingExcel}
+                    />
+                  </label>
+                )}
+              </div>
+            )}
+          </div>
+          
+          {campaign.status === "DRAFT" && (
+            <div style={{ marginTop: "3rem", paddingTop: "2rem", borderTop: "1px solid #334155" }}>
+              <h3 className="form-title" style={{ color: "#ef4444", marginBottom: "1rem" }}>Danger Zone</h3>
+              <p style={{ color: "#94a3b8", marginBottom: "1rem" }}>
+                Permanently delete this draft campaign and all its imported data. This action cannot be undone.
+              </p>
+              <button 
+                className="btn btn-danger" 
+                style={{ backgroundColor: "#ef4444", color: "white", borderColor: "#ef4444" }}
+                onClick={handleDeleteCampaign}
+                disabled={isDeleting}
+              >
+                {isDeleting ? "Deleting..." : "Delete Campaign"}
+              </button>
+            </div>
+          )}
         </div>
       )}
 

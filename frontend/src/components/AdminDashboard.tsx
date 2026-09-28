@@ -70,6 +70,55 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
   const [selectedCampaignId, setSelectedCampaignIdState] = useState<string | null>(initialState.campaignId);
   const [initialCampaignTab, setInitialCampaignTab] = useState<string | null>(initialState.campaignTab);
 
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newCampaignName, setNewCampaignName] = useState("");
+  const [newCampaignDesc, setNewCampaignDesc] = useState("");
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+
+  const handleCreateCampaign = async () => {
+    if (!newCampaignName.trim()) {
+      setCreateError("Campaign name is required.");
+      return;
+    }
+    
+    setIsCreating(true);
+    setCreateError(null);
+    
+    try {
+      const response = await fetch(`${config.apiBaseUrl}/api/admin/campaigns`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: newCampaignName,
+          description: newCampaignDesc || null,
+        }),
+        credentials: "include",
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || "Failed to create campaign.");
+      }
+      
+      const data = await response.json();
+      
+      setShowCreateModal(false);
+      setNewCampaignName("");
+      setNewCampaignDesc("");
+      
+      // Navigate to the newly created campaign
+      setSelectedCampaignId(data.campaign_id);
+      
+    } catch (err: any) {
+      setCreateError(err.message || "An error occurred.");
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
   // Sync hash → state on popstate (browser back/forward)
   const handleHashChange = useCallback(() => {
     const state = parseHash();
@@ -252,6 +301,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: "2rem" }}>
               <h2 style={{ margin: 0 }}>Campaigns</h2>
+              <button className="btn btn-primary" onClick={() => setShowCreateModal(true)}>
+                + Create Campaign
+              </button>
             </div>
             
             {loading ? (
@@ -261,7 +313,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
             ) : campaigns.length === 0 ? (
               <div className="empty-state">
                 <h3>No campaigns found</h3>
-                <p>No campaigns have been imported yet.</p>
+                <p>Click "Create Campaign" to get started.</p>
               </div>
             ) : (
               <div className="campaign-list">
@@ -281,11 +333,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                       <span className="campaign-date" style={{ color: "#4b5563" }}>
                         {campaign.student_count} Students | {campaign.field_count} Fields
                       </span>
+                      <span className="campaign-date" style={{ color: "#4b5563" }}>
+                        Excel Source: {campaign.has_excel ? <span style={{ color: "#34d399" }}>Uploaded</span> : <span style={{ color: "#fbbf24" }}>Missing</span>}
+                      </span>
                       <span className="campaign-date" style={{ color: "#9ca3af", fontSize: "0.75rem" }}>
                         Created on {new Date(campaign.created_at).toLocaleDateString()}
                       </span>
                       <button className="btn btn-secondary" style={{ width: "100%", marginTop: "0.5rem" }}>
-                        Manage Campaign
+                        {campaign.status === "DRAFT" ? "Open" : "Manage Campaign"}
                       </button>
                     </div>
                   </div>
@@ -302,6 +357,57 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
           </div>
         )}
       </div>
+
+      {showCreateModal && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h3>Create New Campaign</h3>
+            {createError && <div className="error-message" style={{ marginBottom: "1rem" }}>{createError}</div>}
+            
+            <div className="form-group">
+              <label>Campaign Name *</label>
+              <input 
+                type="text" 
+                value={newCampaignName} 
+                onChange={e => setNewCampaignName(e.target.value)}
+                placeholder="e.g. Fall 2026 Student Data"
+                autoFocus
+              />
+            </div>
+            
+            <div className="form-group" style={{ marginTop: "1rem" }}>
+              <label>Description (Optional)</label>
+              <textarea 
+                value={newCampaignDesc} 
+                onChange={e => setNewCampaignDesc(e.target.value)}
+                placeholder="Brief description..."
+                rows={3}
+                style={{ width: "100%", padding: "0.75rem", borderRadius: "8px", border: "1px solid #334155", backgroundColor: "#0f172a", color: "#f8fafc" }}
+              />
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "1rem", marginTop: "1.5rem" }}>
+              <button 
+                className="btn btn-secondary" 
+                onClick={() => {
+                  setShowCreateModal(false);
+                  setCreateError(null);
+                }}
+                disabled={isCreating}
+              >
+                Cancel
+              </button>
+              <button 
+                className="btn btn-primary" 
+                onClick={handleCreateCampaign}
+                disabled={isCreating || !newCampaignName.trim()}
+              >
+                {isCreating ? "Creating..." : "Create"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

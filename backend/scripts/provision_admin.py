@@ -21,31 +21,32 @@ from app.config import settings
 def provision_admin():
     db = SessionLocal()
     try:
-        admin_email = settings.admin_email.lower()
-        print(f"Configured admin email: {admin_email}")
+        admin_emails = settings.admin_emails
+        print(f"Configured admin emails: {admin_emails}")
 
         # 1. Deactivate obsolete admin
         obsolete_email = "admin@poornima.org"
         obsolete_admin = db.query(User).filter(User.email == obsolete_email).first()
-        if obsolete_admin and obsolete_admin.is_active:
+        if obsolete_admin and obsolete_admin.is_active and obsolete_email not in admin_emails:
             print(f"Deactivating obsolete admin account: {obsolete_email}")
             obsolete_admin.is_active = False
 
-        # 2. Create or update true admin
-        admin_user = db.query(User).filter(User.email == admin_email).first()
-        if admin_user:
-            print(f"Admin user {admin_email} already exists. Updating role and status.")
-            admin_user.role = UserRole.ADMIN
-            admin_user.is_active = True
-        else:
-            print(f"Creating new admin user: {admin_email}")
-            admin_user = User(
-                email=admin_email,
-                role=UserRole.ADMIN,
-                is_active=True,
-                google_subject_id=None,
-            )
-            db.add(admin_user)
+        # 2. Create or update each configured admin
+        for admin_email in admin_emails:
+            admin_user = db.query(User).filter(User.email == admin_email).first()
+            if admin_user:
+                print(f"Admin user {admin_email} already exists. Updating role and status.")
+                admin_user.role = UserRole.ADMIN
+                admin_user.is_active = True
+            else:
+                print(f"Creating new admin user: {admin_email}")
+                admin_user = User(
+                    email=admin_email,
+                    role=UserRole.ADMIN,
+                    is_active=True,
+                    google_subject_id=None,
+                )
+                db.add(admin_user)
 
         db.commit()
         print("Provisioning completed successfully.")

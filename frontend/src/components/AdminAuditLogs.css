@@ -1,0 +1,293 @@
+/* ============================================
+   Admin Audit Logs
+   ============================================ */
+
+/* ---- Page header ---- */
+.audit-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.audit-title {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #14181d;
+}
+
+.audit-intro {
+  color: #6b7280;
+  font-size: 0.95rem;
+  margin: 0.25rem 0 0;
+}
+
+/* Base button look inside the audit page */
+.admin-audit-logs .btn {
+  cursor: pointer;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  padding: 0.6rem 1.15rem;
+}
+
+/* ---- Full-screen mode (all admin pages): no blue photo, white panel fills the page ---- */
+body.admin-fullscreen {
+  background: #ffffff;
+  height: 100vh;
+  overflow: hidden; /* page itself never scrolls */
+}
+
+body.admin-fullscreen #root {
+  padding: 0;
+  justify-content: flex-start;
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+body.admin-fullscreen .app-container {
+  gap: 0;
+}
+
+body.admin-fullscreen .dash-page {
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+  gap: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: #ffffff;
+}
+
+/* Hide the "Admin" role badge in the corner */
+body.admin-fullscreen .dash-topbar {
+  display: none;
+}
+
+body.admin-fullscreen .dashboard-shell--admin {
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 1.5rem 2rem;
+}
+
+body.admin-fullscreen .admin-layout {
+  height: 100%;
+  min-height: 0;
+}
+
+/* Sidebar stays fixed; only the content column scrolls if it has to */
+body.admin-fullscreen .admin-sidebar {
+  overflow-y: auto;
+}
+
+body.admin-fullscreen .admin-main-content {
+  overflow-y: auto;
+  padding-right: 0.75rem;
+}
+
+/* Slightly tighter card so campaign detail fits without scrolling */
+body.admin-fullscreen .campaign-form {
+  padding: 1.5rem 1.75rem;
+}
+
+/* ---- Filters ---- */
+.audit-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1.25rem;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+}
+
+.audit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.audit-field label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #6b7280;
+}
+
+.audit-field input {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.9rem;
+  color: #111827;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.audit-field input::placeholder {
+  color: #9ca3af;
+}
+
+.audit-field input:focus {
+  outline: none;
+  border-color: #14181d;
+  box-shadow: 0 0 0 3px rgba(20, 24, 29, 0.08);
+}
+
+.audit-filter-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.audit-filter-actions .btn {
+  padding: 0.6rem 1.15rem;
+  font-size: 0.9rem;
+}
+
+.audit-filter-actions .btn:disabled,
+.audit-pagination .btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ---- Table card ---- */
+.audit-card {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(20, 24, 29, 0.05);
+}
+
+.audit-table-wrap {
+  overflow-x: auto;
+}
+
+.audit-table th {
+  background: #f9fafb;
+  white-space: nowrap;
+}
+
+.audit-table tbody tr:hover {
+  background: #fafafa;
+}
+
+.audit-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.audit-time {
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.audit-sub {
+  font-size: 0.78rem;
+  font-weight: 400;
+  color: #6b7280;
+}
+
+.audit-entity {
+  font-weight: 500;
+  text-transform: capitalize;
+}
+
+/* Action badges */
+.audit-badge {
+  display: inline-block;
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.audit-badge--success { background: #ecfdf5; color: #047857; }
+.audit-badge--info    { background: #eef2ff; color: #4338ca; }
+.audit-badge--muted   { background: #f1f5f9; color: #475569; }
+.audit-badge--danger  { background: #fef2f2; color: #b91c1c; }
+.audit-badge--neutral { background: #f3f4f6; color: #374151; }
+
+/* Details (collapsible JSON) */
+.audit-details summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #14181d;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.audit-details pre {
+  margin: 0.5rem 0 0;
+  padding: 0.6rem 0.75rem;
+  max-width: 360px;
+  overflow: auto;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: #1f2937;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+/* ---- Empty state ---- */
+.audit-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 3.5rem 1rem;
+  text-align: center;
+  color: #6b7280;
+}
+
+.audit-empty svg {
+  color: #9ca3af;
+  margin-bottom: 0.25rem;
+}
+
+.audit-empty-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #14181d;
+}
+
+.audit-empty-text {
+  max-width: 380px;
+  font-size: 0.9rem;
+}
+
+/* ---- Pagination ---- */
+.audit-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.9rem 1.25rem;
+  background: #fafafa;
+  border-top: 1px solid #e5e7eb;
+}
+
+.audit-pagination-btns {
+  display: flex;
+  gap: 0.5rem;
+}

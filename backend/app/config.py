@@ -37,7 +37,13 @@ class Settings:
     google_client_id: str = field(default_factory=lambda: os.getenv("GOOGLE_CLIENT_ID", ""))
     google_client_secret: str = field(default_factory=lambda: os.getenv("GOOGLE_CLIENT_SECRET", ""))
     google_redirect_uri: str = field(default_factory=lambda: os.getenv("GOOGLE_REDIRECT_URI", "postmessage"))
-    admin_email: str = field(default_factory=lambda: os.getenv("ADMIN_EMAIL", "piyushagarwalnew@gmail.com"))
+    admin_emails: list[str] = field(
+        default_factory=lambda: [
+            e.strip().lower()
+            for e in os.getenv("ADMIN_EMAIL", "piyushagarwalnew@gmail.com").split(",")
+            if e.strip()
+        ]
+    )
     
     # Environment and security settings
     environment: str = field(default_factory=lambda: os.getenv("ENVIRONMENT", "development"))

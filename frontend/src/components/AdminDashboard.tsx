@@ -185,8 +185,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
     fetchCampaigns();
   }, [activeTab]); // Refetch if switching tabs just in case
 
-  if (selectedCampaignId) {
-    return (
+  // All admin pages: drop the blue photo background and let the white panel fill the screen
+  useEffect(() => {
+    document.body.classList.add("admin-fullscreen");
+    return () => document.body.classList.remove("admin-fullscreen");
+  }, []);
+
+  const campaignDetailView = selectedCampaignId ? (
       <AdminCampaignDetail 
         campaignId={selectedCampaignId} 
         initialTab={initialCampaignTab || "overview"}
@@ -199,8 +204,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
           setHash(`#admin/campaigns/${selectedCampaignId}/${tab}`);
         }}
       />
-    );
-  }
+  ) : null;
 
   // Calculate Dashboard stats
   const totalCampaigns = campaigns.length;
@@ -208,15 +212,38 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
   const publishedCampaigns = campaigns.filter(c => c.status === "PUBLISHED").length;
   const closedCampaigns = campaigns.filter(c => c.status === "CLOSED").length;
   const totalStudents = campaigns.reduce((acc, c) => acc + c.student_count, 0);
+  const avgStudents = totalCampaigns ? Math.round(totalStudents / totalCampaigns) : 0;
+
+  const statusSegments = [
+    { key: "published", label: "Published (Live)", count: publishedCampaigns },
+    { key: "draft", label: "Drafts", count: draftCampaigns },
+    { key: "closed", label: "Closed", count: closedCampaigns },
+  ];
+
+  const recentCampaigns = [...campaigns]
+    .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+    .slice(0, 5);
+
+  const attentionItems = campaigns.flatMap(c => {
+    const items: { id: string; name: string; msg: string; level: "warn" | "info" }[] = [];
+    if (c.status !== "CLOSED" && !c.has_excel) {
+      items.push({ id: c.campaign_id, name: c.name, msg: "Excel source is missing", level: "warn" });
+    }
+    if (c.status === "DRAFT" && c.has_excel) {
+      items.push({ id: c.campaign_id, name: c.name, msg: "Draft - ready to review & publish", level: "info" });
+    }
+    return items;
+  });
 
   return (
     <div className="admin-layout">
       {/* Sidebar Navigation */}
       <div className="admin-sidebar">
-        <div style={{ padding: "0 1rem", marginBottom: "1rem" }}>
-          <h2 style={{ fontSize: "1.25rem", margin: "0", color: "#f8fafc" }}>Admin Panel</h2>
-          <div style={{ fontSize: "0.75rem", color: "#94a3b8", marginTop: "0.25rem", wordBreak: "break-all" }}>
-            {user?.email}
+        <div className="admin-profile">
+          <img src="/logo.png" alt="Logo" className="admin-profile-logo" />
+          <div>
+            <h2 className="admin-profile-title">Admin Panel</h2>
+            <div className="admin-profile-email">{user?.email}</div>
           </div>
         </div>
         
@@ -241,8 +268,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
 
         {onLogout && (
           <button 
-            className="admin-nav-item"
-            style={{ marginTop: "auto", borderTop: "1px solid #334155", borderRadius: "0 0 8px 8px" }}
+            className="admin-nav-item admin-nav-signout"
             onClick={onLogout}
           >
             Sign Out
@@ -252,11 +278,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
 
       {/* Main Content Area */}
       <div className="admin-main-content">
-        {activeTab === "dashboard" && (
+        {campaignDetailView}
+        {!selectedCampaignId && activeTab === "dashboard" && (
           <div>
-            <h2 style={{ marginBottom: "2rem" }}>System Overview</h2>
+            <h2 className="admin-page-title">System Overview</h2>
             {loading ? (
-              <div className="loading-state">Loading statistics...</div>
+              <div className="page-loader" role="status" aria-live="polite">
+                <span className="spinner spinner--lg" />
+                <span>Loading dashboard...</span>
+              </div>
             ) : error ? (
               <div className="error-state">{error} <button onClick={fetchCampaigns} style={{ marginLeft: "1rem" }}>Retry</button></div>
             ) : (
@@ -266,30 +296,114 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                     <span className="stat-label">Total Campaigns</span>
                     <span className="stat-value">{totalCampaigns}</span>
                   </div>
-                  <div className="stat-card">
+                  <div className="stat-card stat-card--live">
                     <span className="stat-label">Published (Live)</span>
-                    <span className="stat-value" style={{ color: "#34d399" }}>{publishedCampaigns}</span>
+                    <span className="stat-value">{publishedCampaigns}</span>
                   </div>
-                  <div className="stat-card">
+                  <div className="stat-card stat-card--draft">
                     <span className="stat-label">Drafts</span>
-                    <span className="stat-value" style={{ color: "#fbbf24" }}>{draftCampaigns}</span>
+                    <span className="stat-value">{draftCampaigns}</span>
                   </div>
-                  <div className="stat-card">
+                  <div className="stat-card stat-card--closed">
                     <span className="stat-label">Closed</span>
-                    <span className="stat-value" style={{ color: "#94a3b8" }}>{closedCampaigns}</span>
+                    <span className="stat-value">{closedCampaigns}</span>
                   </div>
-                  <div className="stat-card">
+                  <div className="stat-card stat-card--students">
                     <span className="stat-label">Total Enrolled Students</span>
-                    <span className="stat-value" style={{ color: "#818cf8" }}>{totalStudents}</span>
+                    <span className="stat-value">{totalStudents}</span>
                   </div>
                 </div>
                 
-                <div style={{ padding: "2rem", backgroundColor: "#1e293b", borderRadius: "8px", border: "1px solid #334155" }}>
-                  <h3 style={{ marginTop: 0 }}>Quick Actions</h3>
-                  <div style={{ display: "flex", gap: "1rem", marginTop: "1rem" }}>
+                <div className="admin-panel-card">
+                  <h3 className="admin-panel-title">Quick Actions</h3>
+                  <div className="admin-panel-actions">
                     <button className="btn btn-primary" onClick={() => setActiveTab("campaigns")}>
                       View All Campaigns
                     </button>
+                    <button className="btn btn-secondary" onClick={() => setActiveTab("audit")}>
+                      View Audit Logs
+                    </button>
+                  </div>
+                </div>
+
+                <div className="admin-insights-grid">
+                  {/* Status breakdown */}
+                  <div className="admin-panel-card admin-insight-card">
+                    <h3 className="admin-panel-title">Campaign Status</h3>
+                    {totalCampaigns === 0 ? (
+                      <p className="admin-muted">No campaigns yet. Create one to get started.</p>
+                    ) : (
+                      <>
+                        <div className="status-bar">
+                          {statusSegments.map(s => s.count > 0 && (
+                            <div
+                              key={s.key}
+                              className={`status-bar-seg seg-${s.key}`}
+                              style={{ width: `${(s.count / totalCampaigns) * 100}%` }}
+                              title={`${s.label}: ${s.count}`}
+                            />
+                          ))}
+                        </div>
+                        <ul className="status-legend">
+                          {statusSegments.map(s => (
+                            <li key={s.key}>
+                              <span className={`status-dot seg-${s.key}`} />
+                              <span className="status-legend-name">{s.label}</span>
+                              <span className="status-legend-count">{s.count}</span>
+                              <span className="status-legend-pct">{Math.round((s.count / totalCampaigns) * 100)}%</span>
+                            </li>
+                          ))}
+                        </ul>
+                        <div className="admin-insight-footer">
+                          Avg. <strong>{avgStudents}</strong> students per campaign
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Recent campaigns */}
+                  <div className="admin-panel-card admin-insight-card admin-insight-card--tall">
+                    <div className="admin-insight-head">
+                      <h3 className="admin-panel-title">Recent Campaigns</h3>
+                      <button className="admin-link-btn" onClick={() => setActiveTab("campaigns")}>View all</button>
+                    </div>
+                    {recentCampaigns.length === 0 ? (
+                      <p className="admin-muted">Nothing here yet.</p>
+                    ) : (
+                      <ul className="recent-list">
+                        {recentCampaigns.map(c => (
+                          <li key={c.campaign_id} className="recent-item" onClick={() => setSelectedCampaignId(c.campaign_id)}>
+                            <div className="recent-main">
+                              <span className="recent-name">{c.name}</span>
+                              <span className="recent-meta">
+                                {c.student_count} students · {c.field_count} fields · Updated {new Date(c.updated_at).toLocaleDateString()}
+                              </span>
+                            </div>
+                            <span className={`badge badge-${c.status.toLowerCase()}`}>{c.status}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+
+                  {/* Needs attention */}
+                  <div className="admin-panel-card admin-insight-card">
+                    <h3 className="admin-panel-title">Needs Attention</h3>
+                    {attentionItems.length === 0 ? (
+                      <p className="admin-muted">All good - nothing needs your attention right now.</p>
+                    ) : (
+                      <ul className="attention-list">
+                        {attentionItems.map((a, i) => (
+                          <li key={`${a.id}-${i}`} className="attention-item" onClick={() => setSelectedCampaignId(a.id)}>
+                            <span className={`attention-dot attention-dot--${a.level}`} />
+                            <div>
+                              <div className="attention-name">{a.name}</div>
+                              <div className="attention-msg">{a.msg}</div>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
                 </div>
               </>
@@ -297,7 +411,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
           </div>
         )}
 
-        {activeTab === "campaigns" && (
+        {!selectedCampaignId && activeTab === "campaigns" && (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: "2rem" }}>
               <h2 style={{ margin: 0 }}>Campaigns</h2>
@@ -307,7 +421,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
             </div>
             
             {loading ? (
-              <div className="loading-state">Loading campaigns...</div>
+              <div className="page-loader" role="status" aria-live="polite">
+                <span className="spinner spinner--lg" />
+                <span>Loading campaigns...</span>
+              </div>
             ) : error ? (
               <div className="error-state">{error} <button onClick={fetchCampaigns} style={{ marginLeft: "1rem" }}>Retry</button></div>
             ) : campaigns.length === 0 ? (
@@ -334,7 +451,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                         {campaign.student_count} Students | {campaign.field_count} Fields
                       </span>
                       <span className="campaign-date" style={{ color: "#4b5563" }}>
-                        Excel Source: {campaign.has_excel ? <span style={{ color: "#34d399" }}>Uploaded</span> : <span style={{ color: "#fbbf24" }}>Missing</span>}
+                        Excel Source: {campaign.has_excel ? <span className="status-ok">Uploaded</span> : <span className="status-missing">Missing</span>}
                       </span>
                       <span className="campaign-date" style={{ color: "#9ca3af", fontSize: "0.75rem" }}>
                         Created on {new Date(campaign.created_at).toLocaleDateString()}
@@ -350,23 +467,31 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
           </div>
         )}
 
-        {activeTab === "audit" && (
+        {!selectedCampaignId && activeTab === "audit" && (
           <div>
-            <h2 style={{ marginBottom: "2rem" }}>Audit Logs</h2>
-            <AdminAuditLogs onBack={() => setActiveTab("dashboard")} />
+            <AdminAuditLogs />
           </div>
         )}
       </div>
 
       {showCreateModal && (
-        <div className="modal-overlay">
+        <div
+          className="modal-overlay"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget && !isCreating) {
+              setShowCreateModal(false);
+              setCreateError(null);
+            }
+          }}
+        >
           <div className="modal-content">
             <h3>Create New Campaign</h3>
             {createError && <div className="error-message" style={{ marginBottom: "1rem" }}>{createError}</div>}
             
-            <div className="form-group">
-              <label>Campaign Name *</label>
+            <div className="form-group" style={{ marginBottom: "1rem" }}>
+              <label htmlFor="newCampaignName">Campaign Name *</label>
               <input 
+                id="newCampaignName"
                 type="text" 
                 value={newCampaignName} 
                 onChange={e => setNewCampaignName(e.target.value)}
@@ -375,18 +500,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
               />
             </div>
             
-            <div className="form-group" style={{ marginTop: "1rem" }}>
-              <label>Description (Optional)</label>
+            <div className="form-group">
+              <label htmlFor="newCampaignDesc">Description (Optional)</label>
               <textarea 
+                id="newCampaignDesc"
                 value={newCampaignDesc} 
                 onChange={e => setNewCampaignDesc(e.target.value)}
                 placeholder="Brief description..."
                 rows={3}
-                style={{ width: "100%", padding: "0.75rem", borderRadius: "8px", border: "1px solid #334155", backgroundColor: "#0f172a", color: "#f8fafc" }}
               />
             </div>
 
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "1rem", marginTop: "1.5rem" }}>
+            <div className="modal-actions">
               <button 
                 className="btn btn-secondary" 
                 onClick={() => {

@@ -161,6 +161,7 @@ export const AdminFormBuilder: React.FC<AdminFormBuilderProps> = ({ campaignId, 
   const [isDirty, setIsDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
 
   // Auto-scroll mechanism refs
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
@@ -408,12 +409,17 @@ export const AdminFormBuilder: React.FC<AdminFormBuilderProps> = ({ campaignId, 
   const collectFields = orderedFields.filter(f => f.requires_student_input);
 
   return (
-    <div className="admin-form-builder" style={{ marginTop: "2rem" }}>
-      <div style={{ marginBottom: "2rem" }}>
+    <div className={`admin-form-builder${showPreview ? " has-preview" : ""}`} style={{ marginTop: "1rem" }}>
+      <div style={{ marginBottom: "1.5rem", display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem", flexWrap: "wrap" }}>
+        <div>
         <h3>Form Builder</h3>
-        <p style={{ color: "#94a3b8", fontSize: "0.95rem" }}>
-          Configure field requirements on the left, and drag-and-drop fields in the Live Preview on the right to set their order.
+        <p style={{ color: "#6b7280", fontSize: "0.95rem" }}>
+          Configure validation rules for each field. Open the Live Preview to see the student form and drag fields to reorder them.
         </p>
+        </div>
+        <button type="button" className="btn btn-secondary" onClick={() => setShowPreview(v => !v)}>
+          {showPreview ? "Hide Live Preview" : "Live Preview"}
+        </button>
       </div>
 
       {saveMessage && (
@@ -443,7 +449,7 @@ export const AdminFormBuilder: React.FC<AdminFormBuilderProps> = ({ campaignId, 
       {/* Two-column responsive layout */}
       <div style={{
         display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))",
+        gridTemplateColumns: "1fr",
         gap: "2rem",
         alignItems: "start"
       }}>
@@ -451,17 +457,17 @@ export const AdminFormBuilder: React.FC<AdminFormBuilderProps> = ({ campaignId, 
         {/* Left Column: Configuration */}
         <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
           <div>
-            <h4 style={{ marginBottom: "0.75rem", color: "#f1f5f9" }}>Field Configuration</h4>
-            <p style={{ color: "#94a3b8", fontSize: "0.875rem", marginBottom: "1rem" }}>
+            <h4 style={{ marginBottom: "0.75rem", color: "#111827" }}>Field Configuration</h4>
+            <p style={{ color: "#6b7280", fontSize: "0.875rem", marginBottom: "1rem" }}>
               Configure validation rules for fields that require student input.
             </p>
             
             {collectFields.length === 0 ? (
-              <div style={{ padding: "1rem", backgroundColor: "#1e293b", borderRadius: "8px", color: "#94a3b8", textAlign: "center" }}>
+              <div style={{ padding: "1rem", backgroundColor: "#f3f4f6", borderRadius: "8px", color: "#6b7280", textAlign: "center" }}>
                 No collectable fields in this campaign.
               </div>
             ) : (
-              collectFields.map(field => (
+              <div className="fb-config-grid">{collectFields.map(field => (
                 <div key={`config-${field.id}`} style={{
                   border: "1px solid #e5e7eb",
                   borderRadius: "8px",
@@ -623,12 +629,13 @@ export const AdminFormBuilder: React.FC<AdminFormBuilderProps> = ({ campaignId, 
                     </div>
                   )}
                 </div>
-              ))
+              ))}
+              </div>
             )}
           </div>
           
           {!disabled && (
-            <div style={{ marginTop: "1rem", position: "sticky", bottom: "1rem", zIndex: 10 }}>
+            <div style={{ marginTop: "1rem", position: "sticky", bottom: 0, zIndex: 10, background: "#ffffff", padding: "0.75rem 0", borderTop: "1px solid #e5e7eb" }}>
               <button 
                 type="button"
                 className="btn btn-primary" 
@@ -649,14 +656,19 @@ export const AdminFormBuilder: React.FC<AdminFormBuilderProps> = ({ campaignId, 
         </div>
 
         {/* Right Column: Live Form Preview (Drag and Drop Ordering) */}
-        <div style={{ position: "sticky", top: "2rem", alignSelf: "flex-start" }}>
-          <h4 style={{ marginBottom: "0.75rem", color: "#f1f5f9" }}>Live Form Preview</h4>
-          <p style={{ color: "#94a3b8", fontSize: "0.875rem", marginBottom: "1rem" }}>
+        {showPreview && (
+        <div className="fb-preview-drawer">
+          <div className="fb-preview-head">
+            <h4 style={{ margin: 0, color: "#111827" }}>Live Form Preview</h4>
+            <button type="button" className="btn btn-secondary" onClick={() => setShowPreview(false)} aria-label="Close preview" style={{ padding: "0.3rem 0.7rem" }}>&times;</button>
+          </div>
+          <p style={{ color: "#6b7280", fontSize: "0.875rem", marginBottom: "1rem" }}>
             Drag and drop fields here to reorder them.
           </p>
           
           <div 
             ref={scrollContainerRef}
+            className="fb-preview-body"
             style={{ 
             border: "1px solid #e5e7eb", 
             borderRadius: "8px", 
@@ -703,6 +715,7 @@ export const AdminFormBuilder: React.FC<AdminFormBuilderProps> = ({ campaignId, 
             </form>
           </div>
         </div>
+        )}
 
       </div>
     </div>

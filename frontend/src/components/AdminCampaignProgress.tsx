@@ -59,14 +59,14 @@ export const AdminCampaignProgress: React.FC<AdminCampaignProgressProps> = ({ ca
     }
   };
 
-  if (loading && !progress) return <div className="loading-state">Loading progress...</div>;
+  if (loading && !progress) return <div className="loading-state" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.6rem" }}><span className="spinner" />Loading progress...</div>;
   if (error && !progress) return <div className="error-state">{error}</div>;
   if (!progress || !studentsData) return null;
 
   if (selectedStudent) {
     return (
-      <div className="student-detail-view" style={{ marginTop: "2rem", borderTop: "1px solid #e2e8f0", paddingTop: "2rem" }}>
-        <button className="btn back-btn" onClick={() => setSelectedStudent(null)} style={{ marginBottom: "1.5rem" }}>
+      <div className="student-detail-view" style={{ marginTop: "0.5rem" }}>
+        <button className="btn btn-secondary" onClick={() => setSelectedStudent(null)} style={{ marginBottom: "1.5rem" }}>
           &larr; Back to Student List
         </button>
         
@@ -129,9 +129,9 @@ export const AdminCampaignProgress: React.FC<AdminCampaignProgressProps> = ({ ca
   };
 
   return (
-    <div className="campaign-progress" style={{ marginTop: "2.5rem" }}>
+    <div className="campaign-progress" style={{ marginTop: "0.5rem" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-        <h3 className="form-title" style={{ margin: 0 }}>Submission Progress</h3>
+        <h3 className="admin-panel-title" style={{ fontSize: "1.25rem" }}>Submission Progress</h3>
         <button 
           className="btn btn-primary" 
           onClick={handleExport}
@@ -141,7 +141,7 @@ export const AdminCampaignProgress: React.FC<AdminCampaignProgressProps> = ({ ca
         </button>
       </div>
       
-      <div style={{ padding: "1.5rem", backgroundColor: "#f8fafc", borderRadius: "8px", border: "1px solid #e2e8f0", marginBottom: "2rem" }}>
+      <div style={{ padding: "1.25rem 1.5rem", backgroundColor: "#f9fafb", borderRadius: "12px", border: "1px solid #e5e7eb", marginBottom: "1.5rem" }}>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.5rem", fontWeight: 500 }}>
           <span>{progress.submitted_students} / {progress.total_students} submitted</span>
           <span>{progress.submission_percentage.toFixed(1)}%</span>
@@ -150,7 +150,7 @@ export const AdminCampaignProgress: React.FC<AdminCampaignProgressProps> = ({ ca
           <div 
             style={{ 
               width: `${progress.submission_percentage}%`, 
-              backgroundColor: "#2563eb", 
+              backgroundColor: "#059669", 
               height: "100%",
               transition: "width 0.5s ease"
             }} 
@@ -158,14 +158,14 @@ export const AdminCampaignProgress: React.FC<AdminCampaignProgressProps> = ({ ca
         </div>
         
         <div style={{ display: "flex", gap: "2rem", marginTop: "1rem", fontSize: "0.875rem", color: "#475569" }}>
-          <div><strong>Submitted:</strong> {progress.submitted_students}</div>
-          <div><strong>Pending:</strong> {progress.pending_students}</div>
-          <div><strong>Total:</strong> {progress.total_students}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}><span style={{ width: 8, height: 8, borderRadius: "50%", background: "#059669" }} /><strong>Submitted:</strong> {progress.submitted_students}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}><span style={{ width: 8, height: 8, borderRadius: "50%", background: "#d97706" }} /><strong>Pending:</strong> {progress.pending_students}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}><span style={{ width: 8, height: 8, borderRadius: "50%", background: "#14181d" }} /><strong>Total:</strong> {progress.total_students}</div>
         </div>
       </div>
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-        <h4 style={{ margin: 0 }}>Enrolled Students</h4>
+        <h4 style={{ margin: 0 }}>Enrolled Students <span style={{ marginLeft: "0.4rem", fontSize: "0.85rem", fontWeight: 500, color: "#6b7280" }}>({studentsData.total})</span></h4>
         <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
           <select 
             value={statusFilter} 
@@ -173,8 +173,9 @@ export const AdminCampaignProgress: React.FC<AdminCampaignProgressProps> = ({ ca
               setStatusFilter(e.target.value as "ALL" | "PENDING" | "SUBMITTED");
               setPage(1);
             }}
-            className="form-control"
-            style={{ width: "auto" }}
+            className="field-input"
+            disabled={loading}
+            style={{ width: "auto", minWidth: "190px" }}
           >
             <option value="ALL">All Students</option>
             <option value="PENDING">Pending Only</option>
@@ -183,10 +184,16 @@ export const AdminCampaignProgress: React.FC<AdminCampaignProgressProps> = ({ ca
         </div>
       </div>
       
-      {studentLoading && <div className="loading-state" style={{ padding: "1rem" }}>Loading student details...</div>}
+      {studentLoading && <div className="loading-state" style={{ padding: "1rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.6rem" }}><span className="spinner" />Loading student details...</div>}
       
-      <div style={{ overflowX: "auto" }}>
-        <table className="campaigns-table">
+      <div style={{ overflowX: "auto", border: "1px solid #e5e7eb", borderRadius: "12px", position: "relative", minHeight: loading ? "220px" : undefined }}>
+        {loading && (
+          <div className="table-loader" role="status" aria-live="polite">
+            <span className="spinner" />
+            <span>Loading students...</span>
+          </div>
+        )}
+        <table className="campaigns-table" style={{ opacity: loading ? 0.45 : 1, transition: "opacity 0.15s" }}>
           <thead>
             <tr>
               <th>Student Email</th>

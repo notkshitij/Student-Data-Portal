@@ -8,6 +8,8 @@ interface CampaignDetailProps {
   onBack: () => void;
 }
 
+type FieldView = "input" | "verified" | "all";
+
 export const CampaignDetail: React.FC<CampaignDetailProps> = ({ campaignId, onBack }) => {
   const [campaign, setCampaign] = useState<StudentCampaignDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -20,6 +22,8 @@ export const CampaignDetail: React.FC<CampaignDetailProps> = ({ campaignId, onBa
   const [responses, setResponses] = useState<Record<string, string>>({});
   // Track frontend field errors
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  // Which group of fields is visible
+  const [view, setView] = useState<FieldView>("input");
 
   const fetchCampaign = async () => {
     try {
@@ -114,6 +118,17 @@ export const CampaignDetail: React.FC<CampaignDetailProps> = ({ campaignId, onBa
     return isValid;
   };
 
+  const scrollToFirstError = () => {
+    window.setTimeout(() => {
+      const el = document.querySelector(".dynamic-field.has-error");
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      } else {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+    }, 80);
+  };
+
   const handleSave = async (showSuccessMessage: boolean = true) => {
     setError(null);
     if (showSuccessMessage) setSaveMessage(null);
@@ -122,6 +137,9 @@ export const CampaignDetail: React.FC<CampaignDetailProps> = ({ campaignId, onBa
     // 1. Frontend validation (not authoritative, but good UX)
     if (!validateFrontend()) {
       setError("Please fix the errors in the form before saving.");
+      // Make sure the fields with errors are actually visible
+      setView(v => (v === "verified" ? "input" : v));
+      scrollToFirstError();
       return false;
     }
     
@@ -148,6 +166,7 @@ export const CampaignDetail: React.FC<CampaignDetailProps> = ({ campaignId, onBa
       if (!response.ok) {
         if (response.status === 400 && data.detail?.field_errors) {
           setFieldErrors(data.detail.field_errors);
+          scrollToFirstError();
           throw new Error("Please fix the highlighted errors.");
         }
         throw new Error(data.detail || "Failed to save responses.");
@@ -213,7 +232,12 @@ export const CampaignDetail: React.FC<CampaignDetailProps> = ({ campaignId, onBa
   };
 
   if (loading && !campaign) {
-    return <div className="loading-state">Loading campaign details...</div>;
+    return (
+      <div className="page-loader" role="status" aria-live="polite">
+        <span className="spinner spinner--lg" />
+        <span>Loading campaign details...</span>
+      </div>
+    );
   }
 
   if (error && !campaign) {
@@ -233,48 +257,112 @@ export const CampaignDetail: React.FC<CampaignDetailProps> = ({ campaignId, onBa
   const isClosed = campaign.campaign_status === "CLOSED";
   const isLocked = isSubmitted || isClosed;
 
+  // Field groups + progress
+  const editableFields = campaign.fields.filter(f => f.requires_student_input);
+  const readonlyFields = campaign.fields.filter(f => !f.requires_student_input);
+  const filledCount = editableFields.filter(f => (responses[f.field_id] || "").trim() !== "").length;
+  const progressPct = editableFields.length
+    ? Math.round((filledCount / editableFields.length) * 100)
+    : 100;
+
+  const effectiveView: FieldView =
+    view === "input" && editableFields.length === 0 ? "all" : view;
+  const visibleFields =
+    effectiveView === "input"
+      ? editableFields
+      : effectiveView === "verified"
+      ? readonlyFields
+      : campaign.fields;
+
+  const submitLabel = submitting
+    ? "Submitting..."
+    : isSubmitted
+    ? "Submitted & Locked"
+    : isClosed
+    ? "Campaign Closed"
+    : "Final Submit";
+
   return (
     <div className="campaign-detail">
-      <button className="btn back-btn" onClick={onBack}>
-        &larr; Back to Dashboard
-      </button>
-      
-      <div className="campaign-header">
-        <h2>{campaign.name}</h2>
-        {campaign.description && <p className="campaign-description">{campaign.description}</p>}
-        <div className="campaign-badges">
-          <span className="badge badge-status">{campaign.campaign_status}</span>
-          <span className={`badge badge-submission ${campaign.submission_status.toLowerCase()}`}>
-            {campaign.submission_status}
-          </span>
+      <div className="cd-header">
+        <div className="cd-header-main">
+          <h2 className="cd-title">{campaign.name}</h2>
+          {campaign.description && <p className="cd-desc">{campaign.description}</p>}
+          <div className="campaign-badges">
+            <span className="badge badge-status">{campaign.campaign_status}</span>
+            <span className={`badge badge-submission ${campaign.submission_status.toLowerCase()}`}>
+              {campaign.submission_status}
+            </span>
+          </div>
         </div>
+
+        {editableFields.length > 0 && (
+          <div className="cd-progress">
+            <div className="cd-progress-row">
+              <span className="cd-progress-label">Your progress</span>
+              <span className="cd-progress-count">
+                <strong>{filledCount}</strong> / {editableFields.length} filled
+              </span>
+            </div>
+            <div className="cd-progress-track">
+              <div
+                className={`cd-progress-fill ${progressPct === 100 ? "is-done" : ""}`}
+                style={{ width: `${progressPct}%` }}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="campaign-form">
-        <h3 className="form-title">Student Information</h3>
-        <p className="form-subtitle">
-          {isSubmitted 
-            ? `Your responses have been submitted and are locked. (Submitted at: ${new Date(campaign.submitted_at!).toLocaleString()})`
-            : isClosed
-            ? "This campaign is closed and is no longer accepting submissions or changes."
-            : "Please verify the information below. Editable fields marked with an asterisk (*) require your input."
-          }
-        </p>
+        <div className="cd-form-head">
+          <h3 className="form-title">Student Information</h3>
+          <p className="form-subtitle">
+            {isSubmitted 
+              ? `Your responses have been submitted and are locked. (Submitted at: ${new Date(campaign.submitted_at!).toLocaleString()})`
+              : isClosed
+              ? "This campaign is closed and is no longer accepting submissions or changes."
+              : "Please verify the information below. Editable fields marked with an asterisk (*) require your input."
+            }
+          </p>
+        </div>
+
+        <div className="cd-tabs" role="tablist">
+          {editableFields.length > 0 && (
+            <button
+              role="tab"
+              aria-selected={effectiveView === "input"}
+              className={`cd-tab ${effectiveView === "input" ? "active" : ""}`}
+              onClick={() => setView("input")}
+            >
+              Needs your input <span className="cd-tab-count">{editableFields.length}</span>
+            </button>
+          )}
+          {readonlyFields.length > 0 && (
+            <button
+              role="tab"
+              aria-selected={effectiveView === "verified"}
+              className={`cd-tab ${effectiveView === "verified" ? "active" : ""}`}
+              onClick={() => setView("verified")}
+            >
+              Already provided <span className="cd-tab-count">{readonlyFields.length}</span>
+            </button>
+          )}
+          <button
+            role="tab"
+            aria-selected={effectiveView === "all"}
+            className={`cd-tab ${effectiveView === "all" ? "active" : ""}`}
+            onClick={() => setView("all")}
+          >
+            All fields <span className="cd-tab-count">{campaign.fields.length}</span>
+          </button>
+        </div>
         
-        {saveMessage && (
-          <div style={{ padding: "1rem", backgroundColor: "#ecfdf5", color: "#059669", borderRadius: "8px", marginBottom: "1rem", fontWeight: 500 }}>
-            {saveMessage}
-          </div>
-        )}
-        
-        {error && (
-          <div className="error-state" style={{ marginBottom: "1rem" }}>
-            {error}
-          </div>
-        )}
+        {saveMessage && <div className="cd-alert cd-alert--success">{saveMessage}</div>}
+        {error && <div className="cd-alert cd-alert--error">{error}</div>}
         
         <div className="fields-grid">
-          {campaign.fields.map(field => (
+          {visibleFields.map(field => (
             <DynamicField 
               key={field.field_id} 
               field={field} 
@@ -286,23 +374,31 @@ export const CampaignDetail: React.FC<CampaignDetailProps> = ({ campaignId, onBa
           ))}
         </div>
         
-        <div className="form-actions" style={{ display: "flex", gap: "1rem", marginTop: "2rem" }}>
-          <button 
-            className="btn btn-secondary" 
-            onClick={() => handleSave(true)}
-            disabled={saving || submitting || isLocked}
-          >
-            {saving ? "Saving..." : "Save Draft"}
-          </button>
-          
-          <button 
-            className="btn btn-primary" 
-            onClick={handleFinalSubmit}
-            disabled={saving || submitting || isLocked}
-            style={{ marginLeft: "auto" }}
-          >
-            {submitting ? "Submitting..." : (isSubmitted ? "Submitted & Locked" : isClosed ? "Campaign Closed" : "Final Submit")}
-          </button>
+        <div className="cd-actionbar">
+          <span className="cd-actionbar-info">
+            {editableFields.length === 0
+              ? "Nothing to fill in - just review and submit"
+              : filledCount === editableFields.length
+              ? "All fields filled - ready to submit"
+              : `${filledCount} of ${editableFields.length} required fields filled`}
+          </span>
+          <div className="cd-actionbar-buttons">
+            <button 
+              className="btn btn-secondary" 
+              onClick={() => handleSave(true)}
+              disabled={saving || submitting || isLocked}
+            >
+              {saving ? "Saving..." : "Save Draft"}
+            </button>
+            
+            <button 
+              className="btn btn-primary" 
+              onClick={handleFinalSubmit}
+              disabled={saving || submitting || isLocked}
+            >
+              {submitLabel}
+            </button>
+          </div>
         </div>
       </div>
     </div>

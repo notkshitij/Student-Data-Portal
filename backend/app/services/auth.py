@@ -60,10 +60,8 @@ def verify_google_oauth2_code(code: str) -> dict:
     domain = id_info.get("hd")
     allowed_domains = {"poornima.edu.in", "poornima.org"}
     
-    # Allow explicitly configured admin email, regardless of domain
-    admin_email = settings.admin_email.lower()
-    
-    if email == admin_email:
+    # Allow explicitly configured admin email(s), regardless of domain
+    if email in settings.admin_emails:
         return id_info
     
     # Sometimes 'hd' might be missing if it's a regular gmail account, 

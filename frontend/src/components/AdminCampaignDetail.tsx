@@ -219,7 +219,6 @@ export const AdminCampaignDetail: React.FC<AdminCampaignDetailProps> = ({ campai
     return (
       <div className="error-state">
         <p>{error}</p>
-        <button className="btn" onClick={onBack}>Back to Dashboard</button>
       </div>
     );
   }
@@ -234,15 +233,12 @@ export const AdminCampaignDetail: React.FC<AdminCampaignDetailProps> = ({ campai
 
   return (
     <div className="campaign-detail">
-      <button className="btn back-btn" onClick={onBack} style={{ marginBottom: "2rem" }}>
-        &larr; Back to Admin Dashboard
-      </button>
-      
-      <div className="campaign-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: "2rem" }}>
+      <div className="campaign-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: "1.25rem" }}>
         <div>
           <h2 style={{ margin: "0 0 0.5rem 0" }}>{campaign.name}</h2>
-          <div className="campaign-badges">
+          <div className="campaign-badges" style={{ alignItems: "center" }}>
             <span className={`badge badge-${campaign.status.toLowerCase()}`}>{campaign.status}</span>
+            <span className="campaign-date">Created {new Date(campaign.created_at).toLocaleString()}</span>
           </div>
         </div>
         
@@ -294,15 +290,15 @@ export const AdminCampaignDetail: React.FC<AdminCampaignDetailProps> = ({ campai
       )}
 
       {/* Tabs */}
-      <div style={{ display: "flex", gap: "1rem", borderBottom: "1px solid #334155", marginBottom: "2rem" }}>
+      <div style={{ display: "flex", gap: "1rem", borderBottom: "1px solid #e5e7eb", marginBottom: "1.25rem" }}>
         <button 
           onClick={() => setActiveTab("overview")}
           style={{ 
             padding: "0.75rem 1.5rem", 
             border: "none",
-            borderBottom: activeTab === "overview" ? "2px solid #6366f1" : "2px solid transparent",
+            borderBottom: activeTab === "overview" ? "2px solid #14181d" : "2px solid transparent",
             background: "transparent",
-            color: activeTab === "overview" ? "#f8fafc" : "#94a3b8",
+            color: activeTab === "overview" ? "#14181d" : "#6b7280",
             fontWeight: activeTab === "overview" ? 600 : 500,
             cursor: "pointer",
             fontSize: "1rem",
@@ -316,9 +312,9 @@ export const AdminCampaignDetail: React.FC<AdminCampaignDetailProps> = ({ campai
           style={{ 
             padding: "0.75rem 1.5rem", 
             border: "none",
-            borderBottom: activeTab === "form" ? "2px solid #6366f1" : "2px solid transparent",
+            borderBottom: activeTab === "form" ? "2px solid #14181d" : "2px solid transparent",
             background: "transparent",
-            color: activeTab === "form" ? "#f8fafc" : "#94a3b8",
+            color: activeTab === "form" ? "#14181d" : "#6b7280",
             fontWeight: activeTab === "form" ? 600 : 500,
             cursor: "pointer",
             fontSize: "1rem",
@@ -332,9 +328,9 @@ export const AdminCampaignDetail: React.FC<AdminCampaignDetailProps> = ({ campai
           style={{ 
             padding: "0.75rem 1.5rem", 
             border: "none",
-            borderBottom: activeTab === "students" ? "2px solid #6366f1" : "2px solid transparent",
+            borderBottom: activeTab === "students" ? "2px solid #14181d" : "2px solid transparent",
             background: "transparent",
-            color: activeTab === "students" ? "#f8fafc" : "#94a3b8",
+            color: activeTab === "students" ? "#14181d" : "#6b7280",
             fontWeight: activeTab === "students" ? 600 : 500,
             cursor: "pointer",
             fontSize: "1rem",
@@ -348,18 +344,18 @@ export const AdminCampaignDetail: React.FC<AdminCampaignDetailProps> = ({ campai
       {activeTab === "overview" && (
         <div className="campaign-form">
           <h3 className="form-title">Campaign Summary</h3>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginTop: "1.5rem" }}>
-            <div>
-              <strong style={{ color: "#475569" }}>Enrolled Students:</strong> {campaign.student_count}
+          <div className="admin-stats-grid" style={{ marginTop: "1.25rem", marginBottom: 0 }}>
+            <div className="stat-card">
+              <span className="stat-label">Enrolled Students</span>
+              <span className="stat-value">{campaign.student_count}</span>
             </div>
-            <div>
-              <strong style={{ color: "#475569" }}>Total Dynamic Fields:</strong> {campaign.field_count}
+            <div className="stat-card stat-card--students">
+              <span className="stat-label">Total Dynamic Fields</span>
+              <span className="stat-value">{campaign.field_count}</span>
             </div>
-            <div>
-              <strong style={{ color: "#475569" }}>Fields Requiring Input:</strong> {campaign.collect_field_count}
-            </div>
-            <div>
-              <strong style={{ color: "#475569" }}>Created:</strong> {new Date(campaign.created_at).toLocaleString()}
+            <div className="stat-card stat-card--draft">
+              <span className="stat-label">Fields Requiring Input</span>
+              <span className="stat-value">{campaign.collect_field_count}</span>
             </div>
           </div>
           
@@ -369,13 +365,13 @@ export const AdminCampaignDetail: React.FC<AdminCampaignDetailProps> = ({ campai
             <div className="error-message" style={{ marginBottom: "1rem" }}>{uploadError}</div>
           )}
 
-          <div style={{ padding: "1.5rem", backgroundColor: "#1e293b", borderRadius: "8px", border: "1px solid #334155", display: "flex", flexDirection: "column", gap: "1rem" }}>
+          <div style={{ padding: "1.5rem", backgroundColor: "#f9fafb", borderRadius: "12px", border: "1px solid #e5e7eb", display: "flex", flexDirection: "column", gap: "1rem" }}>
             {campaign.has_excel ? (
               <>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                   <div>
-                    <strong style={{ color: "#f8fafc" }}>{campaign.excel_original_filename}</strong>
-                    <div style={{ color: "#94a3b8", fontSize: "0.875rem", marginTop: "0.25rem" }}>
+                    <strong style={{ color: "#14181d" }}>{campaign.excel_original_filename}</strong>
+                    <div style={{ color: "#6b7280", fontSize: "0.875rem", marginTop: "0.25rem" }}>
                       Uploaded successfully
                     </div>
                   </div>
@@ -407,7 +403,7 @@ export const AdminCampaignDetail: React.FC<AdminCampaignDetailProps> = ({ campai
               </>
             ) : (
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <span style={{ color: "#94a3b8" }}>No Excel file uploaded yet.</span>
+                <span style={{ color: "#6b7280" }}>No Excel file uploaded yet.</span>
                 {campaign.status === "DRAFT" && (
                   <label className="btn btn-primary" style={{ cursor: "pointer", margin: 0, opacity: uploadingExcel ? 0.7 : 1 }}>
                     {uploadingExcel ? "Uploading..." : "Upload Excel"}
@@ -425,14 +421,13 @@ export const AdminCampaignDetail: React.FC<AdminCampaignDetailProps> = ({ campai
           </div>
           
           {campaign.status === "DRAFT" && (
-            <div style={{ marginTop: "3rem", paddingTop: "2rem", borderTop: "1px solid #334155" }}>
-              <h3 className="form-title" style={{ color: "#ef4444", marginBottom: "1rem" }}>Danger Zone</h3>
-              <p style={{ color: "#94a3b8", marginBottom: "1rem" }}>
+            <div className="danger-zone">
+              <h3 className="danger-zone-title">Danger Zone</h3>
+              <p className="danger-zone-text">
                 Permanently delete this draft campaign and all its imported data. This action cannot be undone.
               </p>
               <button 
                 className="btn btn-danger" 
-                style={{ backgroundColor: "#ef4444", color: "white", borderColor: "#ef4444" }}
                 onClick={handleDeleteCampaign}
                 disabled={isDeleting}
               >

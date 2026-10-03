@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { config } from "../config";
+import { Loader } from "./Loader";
 import type { AuditLogPaginatedResponse } from "../types/admin";
 import "./AdminAuditLogs.css";
 
@@ -28,6 +29,7 @@ export const AdminAuditLogs: React.FC = () => {
   const [action, setAction] = useState("");
   const [entityType, setEntityType] = useState("");
   const [campaignId, setCampaignId] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const fetchLogs = async (overrides?: {
     action?: string;
@@ -108,7 +110,17 @@ export const AdminAuditLogs: React.FC = () => {
       </div>
 
       {/* ---- Filters ---- */}
-      <form className="audit-filters" onSubmit={handleFilter}>
+      {/* Mobile-only toggle (hidden on desktop via CSS) */}
+      <button
+        type="button"
+        className="audit-filters-toggle"
+        onClick={() => setFiltersOpen((open) => !open)}
+        aria-expanded={filtersOpen}
+      >
+        <span>Filters{hasFilters ? " (active)" : ""}</span>
+        <span aria-hidden="true">{filtersOpen ? "\u25B2" : "\u25BC"}</span>
+      </button>
+      <form className={`audit-filters${filtersOpen ? " is-open" : ""}`} onSubmit={handleFilter}>
         <div className="audit-field">
           <label htmlFor="action">Action</label>
           <input
@@ -141,6 +153,7 @@ export const AdminAuditLogs: React.FC = () => {
         </div>
         <div className="audit-filter-actions">
           <button type="submit" className="btn btn-primary" disabled={loading}>
+            {loading && <Loader variant="inline" />}
             Filter
           </button>
           <button
@@ -161,11 +174,10 @@ export const AdminAuditLogs: React.FC = () => {
       )}
 
       {/* ---- Results ---- */}
-      <div className="audit-card">
+      <div className="audit-card has-loader-overlay">
+        {loading && data && <Loader variant="overlay" label="Updating logs..." />}
         {loading && !data ? (
-          <div className="audit-empty">
-            <span className="audit-empty-text">Loading audit logs...</span>
-          </div>
+          <Loader label="Loading audit logs..." />
         ) : !data || data.items.length === 0 ? (
           <div className="audit-empty">
             <svg

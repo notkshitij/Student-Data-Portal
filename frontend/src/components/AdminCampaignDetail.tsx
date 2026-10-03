@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { config } from "../config";
+import { Loader } from "./Loader";
 import type { AdminCampaignDetailResponse } from "../types/admin";
 import { AdminFormBuilder } from "./AdminFormBuilder";
 import { AdminCampaignProgress } from "./AdminCampaignProgress";
@@ -212,7 +213,7 @@ export const AdminCampaignDetail: React.FC<AdminCampaignDetailProps> = ({ campai
   };
 
   if (loading && !campaign) {
-    return <div className="loading-state">Loading campaign...</div>;
+    return <Loader label="Loading campaign..." />;
   }
 
   if (error && !campaign) {
@@ -224,7 +225,7 @@ export const AdminCampaignDetail: React.FC<AdminCampaignDetailProps> = ({ campai
   }
 
   if (loading && !campaign) {
-    return <div className="loading-state">Loading campaign...</div>;
+    return <Loader label="Loading campaign..." />;
   }
 
   if (!campaign) {
@@ -233,7 +234,7 @@ export const AdminCampaignDetail: React.FC<AdminCampaignDetailProps> = ({ campai
 
   return (
     <div className="campaign-detail">
-      <div className="campaign-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: "1.25rem" }}>
+      <div className="campaign-header cd-admin-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: "1.25rem" }}>
         <div>
           <h2 style={{ margin: "0 0 0.5rem 0" }}>{campaign.name}</h2>
           <div className="campaign-badges" style={{ alignItems: "center" }}>
@@ -242,14 +243,14 @@ export const AdminCampaignDetail: React.FC<AdminCampaignDetailProps> = ({ campai
           </div>
         </div>
         
-        <div style={{ display: "flex", gap: "1rem" }}>
+        <div className="cd-admin-actions" style={{ display: "flex", gap: "1rem" }}>
           {campaign.status === "DRAFT" && (
             <button 
               className="btn btn-primary" 
               onClick={handlePublish}
               disabled={isPublishing || campaign.student_count === 0 || campaign.field_count === 0}
             >
-              {isPublishing ? "Publishing..." : "Publish Campaign"}
+              {isPublishing ? <><Loader variant="inline" />Publishing...</> : "Publish Campaign"}
             </button>
           )}
 
@@ -260,7 +261,7 @@ export const AdminCampaignDetail: React.FC<AdminCampaignDetailProps> = ({ campai
               disabled={isClosing}
               style={{ backgroundColor: "#ef4444", color: "white", borderColor: "#ef4444" }}
             >
-              {isClosing ? "Closing..." : "Close Campaign"}
+              {isClosing ? <><Loader variant="inline" />Closing...</> : "Close Campaign"}
             </button>
           )}
 
@@ -271,7 +272,7 @@ export const AdminCampaignDetail: React.FC<AdminCampaignDetailProps> = ({ campai
               disabled={isPublishing}
               style={{ backgroundColor: "#4f46e5", color: "white", borderColor: "#4f46e5" }}
             >
-              {isPublishing ? "Reopening..." : "Reopen Campaign"}
+              {isPublishing ? <><Loader variant="inline" />Reopening...</> : "Reopen Campaign"}
             </button>
           )}
         </div>
@@ -290,7 +291,7 @@ export const AdminCampaignDetail: React.FC<AdminCampaignDetailProps> = ({ campai
       )}
 
       {/* Tabs */}
-      <div style={{ display: "flex", gap: "1rem", borderBottom: "1px solid #e5e7eb", marginBottom: "1.25rem" }}>
+      <div className="cd-admin-tabs" style={{ display: "flex", gap: "1rem", borderBottom: "1px solid #e5e7eb", marginBottom: "1.25rem" }}>
         <button 
           onClick={() => setActiveTab("overview")}
           style={{ 
@@ -365,7 +366,7 @@ export const AdminCampaignDetail: React.FC<AdminCampaignDetailProps> = ({ campai
             <div className="error-message" style={{ marginBottom: "1rem" }}>{uploadError}</div>
           )}
 
-          <div style={{ padding: "1.5rem", backgroundColor: "#f9fafb", borderRadius: "12px", border: "1px solid #e5e7eb", display: "flex", flexDirection: "column", gap: "1rem" }}>
+          <div className="cd-excel-box" style={{ padding: "1.5rem", backgroundColor: "#f9fafb", borderRadius: "12px", border: "1px solid #e5e7eb", display: "flex", flexDirection: "column", gap: "1rem" }}>
             {campaign.has_excel ? (
               <>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -388,7 +389,7 @@ export const AdminCampaignDetail: React.FC<AdminCampaignDetailProps> = ({ campai
                     
                     {campaign.status === "DRAFT" && (
                       <label className="btn btn-primary" style={{ cursor: "pointer", margin: 0, opacity: uploadingExcel ? 0.7 : 1 }}>
-                        {uploadingExcel ? "Uploading..." : "Replace Excel"}
+                        {uploadingExcel ? <><Loader variant="inline" />Uploading...</> : "Replace Excel"}
                         <input 
                           type="file" 
                           accept=".xlsx" 
@@ -406,7 +407,7 @@ export const AdminCampaignDetail: React.FC<AdminCampaignDetailProps> = ({ campai
                 <span style={{ color: "#6b7280" }}>No Excel file uploaded yet.</span>
                 {campaign.status === "DRAFT" && (
                   <label className="btn btn-primary" style={{ cursor: "pointer", margin: 0, opacity: uploadingExcel ? 0.7 : 1 }}>
-                    {uploadingExcel ? "Uploading..." : "Upload Excel"}
+                    {uploadingExcel ? <><Loader variant="inline" />Uploading...</> : "Upload Excel"}
                     <input 
                       type="file" 
                       accept=".xlsx" 
@@ -431,7 +432,7 @@ export const AdminCampaignDetail: React.FC<AdminCampaignDetailProps> = ({ campai
                 onClick={handleDeleteCampaign}
                 disabled={isDeleting}
               >
-                {isDeleting ? "Deleting..." : "Delete Campaign"}
+                {isDeleting ? <><Loader variant="inline" />Deleting...</> : "Delete Campaign"}
               </button>
             </div>
           )}

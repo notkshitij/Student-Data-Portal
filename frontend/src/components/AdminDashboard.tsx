@@ -1,8 +1,9 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { config } from "../config";
 import type { AdminCampaignListResponse } from "../types/admin";
 import { AdminCampaignDetail } from "./AdminCampaignDetail";
 import { AdminAuditLogs } from "./AdminAuditLogs";
+import { Loader, TopProgressBar } from "./Loader";
 
 interface AdminDashboardProps {
   user: any;
@@ -10,6 +11,18 @@ interface AdminDashboardProps {
 }
 
 type SidebarTab = "dashboard" | "campaigns" | "audit";
+
+const navIconProps = {
+  width: 22,
+  height: 22,
+  viewBox: "0 0 24 24",
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: 1.8,
+  strokeLinecap: "round",
+  strokeLinejoin: "round",
+  "aria-hidden": true,
+} as const;
 
 /**
  * Parse the URL hash to extract navigation state.
@@ -67,6 +80,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
   const [campaigns, setCampaigns] = useState<AdminCampaignListResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // First load shows the full loader; later refreshes keep the content on screen
+  const [refreshing, setRefreshing] = useState(false);
+  const hasLoadedOnce = useRef(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [selectedCampaignId, setSelectedCampaignIdState] = useState<string | null>(initialState.campaignId);
   const [initialCampaignTab, setInitialCampaignTab] = useState<string | null>(initialState.campaignTab);
 
@@ -162,7 +179,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
 
   const fetchCampaigns = async () => {
     try {
-      setLoading(true);
+      if (hasLoadedOnce.current) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
       setError(null);
       const response = await fetch(`${config.apiBaseUrl}/api/admin/campaigns`, {
         credentials: "include",
@@ -174,10 +195,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
       
       const data = await response.json();
       setCampaigns(data);
+      hasLoadedOnce.current = true;
     } catch (err: any) {
       setError(err.message || "An error occurred.");
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -205,6 +228,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
         }}
       />
   ) : null;
+
+  // Mobile navigation helpers + dashboard stats
+  const mobileTitle =
+    activeTab === "dashboard" ? "Overview" : activeTab === "campaigns" ? "Campaigns" : "Audit Logs";
+
+  const goMobileTab = (tab: SidebarTab) => {
+    setMenuOpen(false);
+    setActiveTab(tab);
+    window.scrollTo({ top: 0 });
+  };
 
   // Calculate Dashboard stats
   const totalCampaigns = campaigns.length;
@@ -237,6 +270,100 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
 
   return (
     <div className="admin-layout">
+      <TopProgressBar active={refreshing} />
+
+      {/* Mobile-only top bar (hidden on desktop via CSS) */}
+      <header className="admin-mobile-topbar">
+        <img src="/logo.png" alt="" className="admin-mobile-logo" />
+        <div className="admin-mobile-title">
+          {selectedCampaignId ? (
+            <button
+              type="button"
+              className="admin-mobile-back"
+              onClick={() => {
+                setSelectedCampaignId(null);
+                fetchCampaigns();
+              }}
+            >
+              &lsaquo; Campaigns
+            </button>
+          ) : (
+            <span>{mobileTitle}</span>
+          )}
+        </div>
+        <button
+          type="button"
+          className="admin-mobile-avatar"
+          onClick={() => setMenuOpen((open) => !open)}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          aria-label="Account menu"
+        >
+          {(user?.email || "A").charAt(0).toUpperCase()}
+        </button>
+      </header>
+
+      {menuOpen && (
+        <>
+          <div className="admin-mobile-menu-backdrop" onClick={() => setMenuOpen(false)} />
+          <div className="admin-mobile-menu" role="menu">
+            <div className="admin-mobile-menu-email">{user?.email}</div>
+            {onLogout && (
+              <button
+                type="button"
+                role="menuitem"
+                className="admin-mobile-menu-signout"
+                onClick={() => {
+                  setMenuOpen(false);
+                  onLogout();
+                }}
+              >
+                Sign Out
+              </button>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Mobile-only bottom tab bar (hidden on desktop via CSS) */}
+      <nav className="admin-mobile-bottomnav" aria-label="Admin navigation">
+        <button
+          type="button"
+          className={`admin-mobile-tab ${activeTab === "dashboard" ? "active" : ""}`}
+          onClick={() => goMobileTab("dashboard")}
+        >
+          <svg {...navIconProps}>
+            <rect x="3" y="3" width="7" height="9" rx="1.5" />
+            <rect x="14" y="3" width="7" height="5" rx="1.5" />
+            <rect x="14" y="12" width="7" height="9" rx="1.5" />
+            <rect x="3" y="16" width="7" height="5" rx="1.5" />
+          </svg>
+          <span>Overview</span>
+        </button>
+        <button
+          type="button"
+          className={`admin-mobile-tab ${activeTab === "campaigns" ? "active" : ""}`}
+          onClick={() => goMobileTab("campaigns")}
+        >
+          <svg {...navIconProps}>
+            <rect x="5" y="3" width="14" height="18" rx="2" />
+            <path d="M9 8h6M9 12h6M9 16h4" />
+          </svg>
+          <span>Campaigns</span>
+        </button>
+        <button
+          type="button"
+          className={`admin-mobile-tab ${activeTab === "audit" ? "active" : ""}`}
+          onClick={() => goMobileTab("audit")}
+        >
+          <svg {...navIconProps}>
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 7v5l3 2" />
+          </svg>
+          <span>Audit Logs</span>
+        </button>
+      </nav>
+
       {/* Sidebar Navigation */}
       <div className="admin-sidebar">
         <div className="admin-profile">
@@ -283,10 +410,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
           <div>
             <h2 className="admin-page-title">System Overview</h2>
             {loading ? (
-              <div className="page-loader" role="status" aria-live="polite">
-                <span className="spinner spinner--lg" />
-                <span>Loading dashboard...</span>
-              </div>
+              <Loader label="Loading dashboard..." />
             ) : error ? (
               <div className="error-state">{error} <button onClick={fetchCampaigns} style={{ marginLeft: "1rem" }}>Retry</button></div>
             ) : (
@@ -413,7 +537,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
 
         {!selectedCampaignId && activeTab === "campaigns" && (
           <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: "2rem" }}>
+            <div className="admin-page-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: "2rem" }}>
               <h2 style={{ margin: 0 }}>Campaigns</h2>
               <button className="btn btn-primary" onClick={() => setShowCreateModal(true)}>
                 + Create Campaign
@@ -421,10 +545,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
             </div>
             
             {loading ? (
-              <div className="page-loader" role="status" aria-live="polite">
-                <span className="spinner spinner--lg" />
-                <span>Loading campaigns...</span>
-              </div>
+              <Loader label="Loading campaigns..." />
             ) : error ? (
               <div className="error-state">{error} <button onClick={fetchCampaigns} style={{ marginLeft: "1rem" }}>Retry</button></div>
             ) : campaigns.length === 0 ? (
@@ -527,7 +648,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                 onClick={handleCreateCampaign}
                 disabled={isCreating || !newCampaignName.trim()}
               >
-                {isCreating ? "Creating..." : "Create"}
+                {isCreating ? <><Loader variant="inline" />Creating...</> : "Create"}
               </button>
             </div>
           </div>

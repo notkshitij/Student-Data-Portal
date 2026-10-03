@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { config } from "../config";
+import { Loader } from "./Loader";
 import type { 
   AdminCampaignProgressResponse, 
   AdminStudentListPaginatedResponse,
@@ -59,7 +60,7 @@ export const AdminCampaignProgress: React.FC<AdminCampaignProgressProps> = ({ ca
     }
   };
 
-  if (loading && !progress) return <div className="loading-state" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.6rem" }}><span className="spinner" />Loading progress...</div>;
+  if (loading && !progress) return <Loader label="Loading progress..." />;
   if (error && !progress) return <div className="error-state">{error}</div>;
   if (!progress || !studentsData) return null;
 
@@ -82,7 +83,7 @@ export const AdminCampaignProgress: React.FC<AdminCampaignProgressProps> = ({ ca
           )}
         </div>
         
-        <table className="campaigns-table" style={{ width: "100%", textAlign: "left", borderCollapse: "collapse" }}>
+        <table className="campaigns-table cp-detail-table" style={{ width: "100%", textAlign: "left", borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ backgroundColor: "#f8fafc", borderBottom: "2px solid #e2e8f0" }}>
               <th style={{ padding: "0.75rem" }}>Field Name</th>
@@ -186,14 +187,14 @@ export const AdminCampaignProgress: React.FC<AdminCampaignProgressProps> = ({ ca
       
       {studentLoading && <div className="loading-state" style={{ padding: "1rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.6rem" }}><span className="spinner" />Loading student details...</div>}
       
-      <div style={{ overflowX: "auto", border: "1px solid #e5e7eb", borderRadius: "12px", position: "relative", minHeight: loading ? "220px" : undefined }}>
+      <div className="cp-table-wrap" style={{ overflowX: "auto", border: "1px solid #e5e7eb", borderRadius: "12px", position: "relative", minHeight: loading ? "220px" : undefined }}>
         {loading && (
           <div className="table-loader" role="status" aria-live="polite">
             <span className="spinner" />
             <span>Loading students...</span>
           </div>
         )}
-        <table className="campaigns-table" style={{ opacity: loading ? 0.45 : 1, transition: "opacity 0.15s" }}>
+        <table className="campaigns-table cp-students-table" style={{ opacity: loading ? 0.45 : 1, transition: "opacity 0.15s" }}>
           <thead>
             <tr>
               <th>Student Email</th>
@@ -240,7 +241,7 @@ export const AdminCampaignProgress: React.FC<AdminCampaignProgressProps> = ({ ca
       
       {/* Basic Pagination */}
       {studentsData.total > studentsData.page_size && (
-        <div style={{ display: "flex", justifyContent: "center", gap: "1rem", marginTop: "1.5rem" }}>
+        <div className="cp-pagination" style={{ display: "flex", justifyContent: "center", gap: "1rem", marginTop: "1.5rem" }}>
           <button 
             className="btn btn-secondary" 
             disabled={page === 1}

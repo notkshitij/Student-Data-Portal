@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { config } from "../config";
+import { Loader } from "./Loader";
 import type { AdminFormConfigResponse, AdminFormField, FieldValidationConfig, FieldType } from "../types/admin";
 import {
   DndContext,
@@ -393,7 +394,7 @@ export const AdminFormBuilder: React.FC<AdminFormBuilderProps> = ({ campaignId, 
     }));
   };
 
-  if (loading) return <div className="loading-state">Loading form configuration...</div>;
+  if (loading) return <Loader label="Loading form configuration..." />;
 
   if (orderedFields.length === 0) {
     return (
@@ -410,7 +411,7 @@ export const AdminFormBuilder: React.FC<AdminFormBuilderProps> = ({ campaignId, 
 
   return (
     <div className={`admin-form-builder${showPreview ? " has-preview" : ""}`} style={{ marginTop: "1rem" }}>
-      <div style={{ marginBottom: "1.5rem", display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem", flexWrap: "wrap" }}>
+      <div className="fb-head" style={{ marginBottom: "1.5rem", display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem", flexWrap: "wrap" }}>
         <div>
         <h3>Form Builder</h3>
         <p style={{ color: "#6b7280", fontSize: "0.95rem" }}>
@@ -468,7 +469,7 @@ export const AdminFormBuilder: React.FC<AdminFormBuilderProps> = ({ campaignId, 
               </div>
             ) : (
               <div className="fb-config-grid">{collectFields.map(field => (
-                <div key={`config-${field.id}`} style={{
+                <div key={`config-${field.id}`} className="fb-config-card" style={{
                   border: "1px solid #e5e7eb",
                   borderRadius: "8px",
                   padding: "1.5rem",
@@ -519,7 +520,7 @@ export const AdminFormBuilder: React.FC<AdminFormBuilderProps> = ({ campaignId, 
 
                       {/* Type-Specific Rules */}
                       {(field.validation_config.type === "text" || field.validation_config.type === "textarea") && (
-                        <div style={{ display: "flex", gap: "1rem" }}>
+                        <div className="fb-row" style={{ display: "flex", gap: "1rem" }}>
                           <div className="dynamic-field">
                             <label className="field-label" htmlFor={`minlen-${field.id}`}>Min Length</label>
                             <input 
@@ -546,7 +547,7 @@ export const AdminFormBuilder: React.FC<AdminFormBuilderProps> = ({ campaignId, 
                       )}
 
                       {field.validation_config.type === "number" && (
-                        <div style={{ display: "flex", gap: "1rem" }}>
+                        <div className="fb-row" style={{ display: "flex", gap: "1rem" }}>
                           <div className="dynamic-field">
                             <label className="field-label" htmlFor={`minval-${field.id}`}>Min Value</label>
                             <input 
@@ -635,7 +636,7 @@ export const AdminFormBuilder: React.FC<AdminFormBuilderProps> = ({ campaignId, 
           </div>
           
           {!disabled && (
-            <div style={{ marginTop: "1rem", position: "sticky", bottom: 0, zIndex: 10, background: "#ffffff", padding: "0.75rem 0", borderTop: "1px solid #e5e7eb" }}>
+            <div className="fb-save-bar" style={{ marginTop: "1rem", position: "sticky", bottom: 0, zIndex: 10, background: "#ffffff", padding: "0.75rem 0", borderTop: "1px solid #e5e7eb" }}>
               <button 
                 type="button"
                 className="btn btn-primary" 
@@ -649,7 +650,7 @@ export const AdminFormBuilder: React.FC<AdminFormBuilderProps> = ({ campaignId, 
                   opacity: (!isDirty && !saving) ? 0.7 : 1
                 }}
               >
-                {saving ? "Saving Changes..." : "Save Form"}
+                {saving ? <><Loader variant="inline" />Saving Changes...</> : "Save Form"}
               </button>
             </div>
           )}

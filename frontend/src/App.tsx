@@ -5,6 +5,7 @@ import { StudentDashboard } from "./components/StudentDashboard";
 import { AdminDashboard } from "./components/AdminDashboard";
 import "./App.css";
 import "./Dashboard.css";
+import "./admin-mobile.css";
 
 type ConnectionStatus = "checking" | "connected" | "disconnected";
 
